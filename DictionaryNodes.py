@@ -109,13 +109,14 @@ class DictionaryNew:
             字典[键] = 值
         return 字典
 
-    def dictionary_new(self, 键1, 值1, 键2, 值2, 键3, 值3, 键4, 值4, 键5, 值5):
+    def dictionary_new(self, 键1, 值1, **kwargs):
         字典 = {}
         字典 = self.append_to_dictionary(字典, 键1, 值1)
-        字典 = self.append_to_dictionary(字典, 键2, 值2)
-        字典 = self.append_to_dictionary(字典, 键3, 值3)
-        字典 = self.append_to_dictionary(字典, 键4, 值4)
-        字典 = self.append_to_dictionary(字典, 键5, 值5)
+        for i in range(2, 6):
+            键 = kwargs.get(f"键{i}")
+            值 = kwargs.get(f"值{i}")
+            if 键 is not None and 键 != "":
+                字典 = self.append_to_dictionary(字典, 键, 值)
         return (字典, )
 
 
