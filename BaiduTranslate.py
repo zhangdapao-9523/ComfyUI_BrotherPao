@@ -57,7 +57,7 @@ class BaiduTrans_devapi:
 
     RETURN_TYPES = ('STRING',)
     FUNCTION = 'translation_devapi'
-    CATEGORY = '百度翻译(DEV-api)'
+    CATEGORY = '❤️‍🩹炮哥Nodes/百度翻译'
 
     def translation_devapi(self, 翻译为, text):
         """调用百度翻译API进行文本翻译"""
@@ -129,5 +129,5 @@ NODE_CLASS_MAPPINGS = {
 
 # 定义节点显示名称映射
 NODE_DISPLAY_NAME_MAPPINGS = {
-    'BaiduTrans_DevApi': '百度翻译API',
+    'BaiduTrans_DevApi': '百度翻译(API)',
 }    

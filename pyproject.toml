@@ -1,15 +1,15 @@
 [project]
-name = "comfyui_baidutranslate"
-description = "A Chinese and English text translation plugin for ComfyUI."
+name = "comfyui_brotherpao"
+description = "BrotherPao's Private Nodes"
 version = "1.0.0"
 license = "LICENSE"
 dependencies = ["requests"]
 
 [project.urls]
-Repository = "https://github.com/chflame163/ComfyUI_BaiduTranslate"
+Repository = "https://github.com/zhangdapao-9523/ComfyUI_BrotherPao"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = "chflame163"
-DisplayName = "ComfyUI_BaiduTranslate"
+PublisherId = "zhangdapao9523"
+DisplayName = "❤️‍🩹炮哥Nodes"
 Icon = ""
