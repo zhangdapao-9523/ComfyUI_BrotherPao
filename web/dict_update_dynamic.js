@@ -1,15 +1,15 @@
 import { app } from "../../scripts/app.js";
 
+const BASE_INPUT = "字典";
+const ADD_TYPE = "DICT";
+const MIN_INPUTS = 2;
+const MAX_INPUTS = 10;
+
 app.registerExtension({
-    name: "ComfyUI_BaiduTranslate.DynamicDictMerge",
-    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+    name: "ComfyUI_BrotherPao.DynamicDictMerge",
+    async beforeRegisterNodeDef(nodeType, nodeData) {
         const typeName = nodeData?.name || nodeType?.type || nodeType?.title || nodeType?.name;
         if (typeName !== "DictionaryUpdate") return;
-
-        const baseInput = "字典";
-        const addType = "DICT";
-        const minInputs = 2;
-        const maxInputs = 10;
 
         const originalOnConnectionsChange = nodeType.prototype.onConnectionsChange;
 
@@ -35,13 +35,13 @@ app.registerExtension({
         }
 
         function listDynamicInputs(node) {
-            return node.inputs?.filter(inp => inp?.name?.startsWith(baseInput)) || [];
+            return node.inputs?.filter(inp => inp?.name?.startsWith(BASE_INPUT)) || [];
         }
 
         function listDynamicInputIndices(node) {
             const idxs = [];
             for (let i = 0; i < (node.inputs?.length || 0); i++) {
-                if (node.inputs[i]?.name?.startsWith(baseInput)) idxs.push(i);
+                if (node.inputs[i]?.name?.startsWith(BASE_INPUT)) idxs.push(i);
             }
             return idxs;
         }
@@ -54,24 +54,23 @@ app.registerExtension({
             const inputs = listDynamicInputs(node);
             let maxIndex = 0;
             for (const inp of inputs) {
-                const suffix = parseInt(String(inp?.name).slice(baseInput.length), 10);
+                const suffix = parseInt(String(inp?.name).slice(BASE_INPUT.length), 10);
                 if (!isNaN(suffix)) maxIndex = Math.max(maxIndex, suffix);
             }
-            return baseInput + (maxIndex + 1);
+            return BASE_INPUT + (maxIndex + 1);
         }
 
         function addNextInput(node) {
             const count = listDynamicInputs(node).length;
-            if (count >= maxInputs) return;
-            const name = nextInputName(node);
-            node.addInput(name, addType);
+            if (count >= MAX_INPUTS) return;
+            node.addInput(nextInputName(node), ADD_TYPE);
         }
 
         function renumberDynamicInputs(node) {
             const dynIdxs = listDynamicInputIndices(node);
             for (let i = 0; i < dynIdxs.length; i++) {
                 const idx = dynIdxs[i];
-                const expected = baseInput + (i + 1);
+                const expected = BASE_INPUT + (i + 1);
                 const slot = node.inputs?.[idx];
                 if (slot && slot.name !== expected) {
                     slot.name = expected;
@@ -81,7 +80,7 @@ app.registerExtension({
 
         function ensureMinInputs(node) {
             const inputs = listDynamicInputs(node);
-            const target = Math.min(minInputs, maxInputs);
+            const target = Math.min(MIN_INPUTS, MAX_INPUTS);
             while (inputs.length < target) {
                 addNextInput(node);
             }
@@ -89,22 +88,21 @@ app.registerExtension({
 
         function ensureSingleTrailingEmpty(node) {
             const dynIdxs = listDynamicInputIndices(node);
-            if (dynIdxs.length < minInputs) {
-                for (let i = dynIdxs.length; i < minInputs; i++) {
+            if (dynIdxs.length < MIN_INPUTS) {
+                for (let i = dynIdxs.length; i < MIN_INPUTS; i++) {
                     addNextInput(node);
                 }
             }
 
             let trailingEmpty = 0;
             for (let i = dynIdxs.length - 1; i >= 0; i--) {
-                const idx = dynIdxs[i];
-                if (!isConnectedIndex(node, idx)) trailingEmpty += 1;
+                if (!isConnectedIndex(node, dynIdxs[i])) trailingEmpty += 1;
                 else break;
             }
 
             while (trailingEmpty > 1) {
                 const dynIdxs2 = listDynamicInputIndices(node);
-                if (dynIdxs2.length <= minInputs) break;
+                if (dynIdxs2.length <= MIN_INPUTS) break;
                 const lastIdx = dynIdxs2[dynIdxs2.length - 1];
                 if (!isConnectedIndex(node, lastIdx)) {
                     node.removeInput(lastIdx);
@@ -116,13 +114,13 @@ app.registerExtension({
 
             const dynIdxs3 = listDynamicInputIndices(node);
             const lastIdx = dynIdxs3[dynIdxs3.length - 1];
-            if (isConnectedIndex(node, lastIdx)) {
+            if (lastIdx !== undefined && isConnectedIndex(node, lastIdx)) {
                 const count = listDynamicInputs(node).length;
-                if (count < maxInputs) addNextInput(node);
+                if (count < MAX_INPUTS) addNextInput(node);
             }
         }
 
-        nodeType.prototype.onConnectionsChange = function(type, slot, connected, link_info, output) {
+        nodeType.prototype.onConnectionsChange = function (type, slot, connected, link_info, output) {
             const rv = originalOnConnectionsChange?.call(this, type, slot, connected, link_info, output);
             try {
                 if (type !== LiteGraph.INPUT) return rv;
@@ -131,7 +129,7 @@ app.registerExtension({
                 const dynIdxs = listDynamicInputIndices(this);
                 const isLastDynamic = dynIdxs.length > 0 && dynIdxs[dynIdxs.length - 1] === slot;
                 const slotName = this.inputs?.[slot]?.name;
-                const isDynamicSlot = typeof slotName === "string" && slotName.startsWith(baseInput);
+                const isDynamicSlot = typeof slotName === "string" && slotName.startsWith(BASE_INPUT);
 
                 if (connected && isDynamicSlot && isLastDynamic) {
                     addNextInput(this);
@@ -159,13 +157,13 @@ app.registerExtension({
                 this.setDirtyCanvas(true, true);
                 scheduleCompact(this);
             } catch (err) {
-                console.error("[BaiduTranslate.DynamicDictMerge] onConnectionsChange error", err);
+                console.error("[BrotherPao.DynamicDictMerge] onConnectionsChange error", err);
             }
             return rv;
         };
 
         const originalOnAdded = nodeType.prototype.onAdded;
-        nodeType.prototype.onAdded = function() {
+        nodeType.prototype.onAdded = function () {
             originalOnAdded?.call(this);
             try {
                 ensureMinInputs(this);
@@ -174,7 +172,7 @@ app.registerExtension({
                 this.setDirtyCanvas(true, true);
                 scheduleCompact(this);
             } catch (err) {
-                console.error("[BaiduTranslate.DynamicDictMerge] onAdded error", err);
+                console.error("[BrotherPao.DynamicDictMerge] onAdded error", err);
             }
         };
     }
