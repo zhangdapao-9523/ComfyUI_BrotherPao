@@ -69,13 +69,13 @@ class DictionaryNew:
         base = {
             "required": {
                 "键1": ("STRING", {"default": "", "multiline": False}),
-                "值1": ("STRING", {"default": "", "multiline": False}),
+                "值1": ("STRING", {"default": "", "multiline": True}),
             },
             "optional": {},
         }
         for i in range(2, MAX_KV_PAIRS + 1):
             base["optional"][f"键{i}"] = ("STRING", {"default": "", "multiline": False})
-            base["optional"][f"值{i}"] = ("STRING", {"default": "", "multiline": False})
+            base["optional"][f"值{i}"] = ("STRING", {"default": "", "multiline": True})
         return base
 
     RETURN_TYPES = ("DICT",)
@@ -83,7 +83,7 @@ class DictionaryNew:
     FUNCTION = "dictionary_new"
     CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
 
-    def dictionary_new(self, 键1, 值1, **kwargs):
+    def dictionary_new(self, 键1="", 值1="", **kwargs):
         result = {}
         if 键1:
             result[键1] = 值1
