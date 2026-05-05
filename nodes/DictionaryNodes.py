@@ -96,13 +96,13 @@ class DictionaryNew:
 
 
 NODE_CLASS_MAPPINGS = {
-    'DictionaryUpdate': DictionaryUpdate,
-    'DictionaryGet': DictionaryGet,
-    'DictionaryNew': DictionaryNew,
+    'BrotherPao_DictionaryUpdate': DictionaryUpdate,
+    'BrotherPao_DictionaryGet': DictionaryGet,
+    'BrotherPao_DictionaryNew': DictionaryNew,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    'DictionaryUpdate': '字典合并',
-    'DictionaryGet': '字典取值',
-    'DictionaryNew': '新建字典',
+    'BrotherPao_DictionaryUpdate': '字典合并',
+    'BrotherPao_DictionaryGet': '字典取值',
+    'BrotherPao_DictionaryNew': '新建字典',
 }

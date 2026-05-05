@@ -97,7 +97,7 @@ app.registerExtension({
     name: "ComfyUI_BrotherPao.ImageCompareNode",
 
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== "ImageCompareNode") return;
+        if (nodeData.name !== "BrotherPao_ImageCompare") return;
 
         var origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {

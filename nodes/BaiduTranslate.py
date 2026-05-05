@@ -87,9 +87,9 @@ class BaiduTransDevApi:
 
 
 NODE_CLASS_MAPPINGS = {
-    'BaiduTrans_DevApi': BaiduTransDevApi,
+    'BrotherPao_BaiduTrans': BaiduTransDevApi,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    'BaiduTrans_DevApi': '百度翻译(API)',
+    'BrotherPao_BaiduTrans': '百度翻译(API)',
 }

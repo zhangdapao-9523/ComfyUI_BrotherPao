@@ -64,5 +64,5 @@ class ImageCompareNode:
         ]
 
 
-IMAGE_COMPARE_CLASS_MAPPINGS = {"ImageCompareNode": ImageCompareNode}
-IMAGE_COMPARE_DISPLAY_NAME_MAPPINGS = {"ImageCompareNode": "图像对比"}
+IMAGE_COMPARE_CLASS_MAPPINGS = {"BrotherPao_ImageCompare": ImageCompareNode}
+IMAGE_COMPARE_DISPLAY_NAME_MAPPINGS = {"BrotherPao_ImageCompare": "图像对比"}

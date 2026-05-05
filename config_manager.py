@@ -5,17 +5,28 @@ import threading
 
 _config_dir = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(_config_dir, "config.json")
+CONFIG_EXAMPLE = os.path.join(_config_dir, "config.json.example")
 _lock = threading.RLock()
+
+
+def _read_json(path):
+    try:
+        if os.path.isfile(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
 
 
 def load_config():
     with _lock:
-        try:
-            if os.path.isfile(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
+        config = _read_json(CONFIG_FILE)
+        if config is not None:
+            return config
+        config = _read_json(CONFIG_EXAMPLE)
+        if config is not None:
+            return config
         return {}
 
 
