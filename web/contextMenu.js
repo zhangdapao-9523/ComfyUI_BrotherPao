@@ -4,6 +4,12 @@ import { api } from "../../scripts/api.js";
 const SETTING_ID = "ComfyUI_BrotherPao.MenuNestSub";
 var enableMenuNestSub = false;
 
+var MODEL_EXTENSIONS = [
+    '.ckpt', '.safetensors', '.bin', '.pt', '.pth',
+    '.gguf', '.onnx', '.pb', '.engine', '.diff',
+    '.tensor', '.model', '.param', '.weights'
+];
+
 async function loadConfig() {
     try {
         var response = await api.fetchApi("/brotherpao/config");
@@ -45,6 +51,16 @@ function getEnableMenuNestSub() {
     return app.ui.settings.getSettingValue(SETTING_ID, enableMenuNestSub);
 }
 
+function isModelMenu(values) {
+    var lowerVal = values.join('').toLowerCase();
+    for (var i = 0; i < MODEL_EXTENSIONS.length; i++) {
+        if (lowerVal.indexOf(MODEL_EXTENSIONS[i]) !== -1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function patchContextMenu() {
     if (typeof LiteGraph === 'undefined' || !LiteGraph.ContextMenu) {
         setTimeout(function () { patchContextMenu(); }, 100);
@@ -57,7 +73,7 @@ function patchContextMenu() {
         var hasCallback = options && options.callback;
         var allStrings = !values.some(function (v) { return typeof v !== 'string'; });
 
-        if (!hasCallback || !allStrings || !getEnableMenuNestSub()) {
+        if (!hasCallback || !allStrings || !getEnableMenuNestSub() || !isModelMenu(values)) {
             return existingContextMenu.apply(this, arguments);
         }
 

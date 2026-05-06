@@ -15,7 +15,7 @@ class BaiduTransDevApi:
     def INPUT_TYPES(cls):
         return {
             'required': {
-                'text': ('STRING', {
+                '文本': ('STRING', {
                     'multiline': True,
                     'forceInput': False,
                     'default': '',
@@ -29,27 +29,27 @@ class BaiduTransDevApi:
     FUNCTION = 'translation_devapi'
     CATEGORY = '❤️‍🩹炮哥Nodes/百度翻译'
 
-    def translation_devapi(self, text, 翻译为='zh'):
+    def translation_devapi(self, 文本, 翻译为='zh'):
 
-        if not text or not text.strip():
+        if not 文本 or not 文本.strip():
             return ("",)
 
-        text = text.strip()
-        if len(text) > MAX_TEXT_LENGTH:
-            return (f"文本过长，最大支持 {MAX_TEXT_LENGTH} 字符，当前 {len(text)} 字符",)
+        文本 = 文本.strip()
+        if len(文本) > MAX_TEXT_LENGTH:
+            return (f"文本过长，最大支持 {MAX_TEXT_LENGTH} 字符，当前 {len(文本)} 字符",)
 
         appid, appkey = get_baidu_credentials()
         if not appid or not appkey:
             return ("配置文件不存在或缺少 appid/appkey，请在 config.json 中配置 baidu_translate.appid 和 baidu_translate.appkey",)
 
         salt = random.randint(32768, 65536)
-        sign_text = appid + text + str(salt) + appkey
+        sign_text = appid + 文本 + str(salt) + appkey
         sign = hashlib.md5(sign_text.encode('utf-8')).hexdigest()
 
         headers = {'Content-Type': 'application/x-www-form-urlencoded'}
         payload = {
             'appid': appid,
-            'q': text,
+            'q': 文本,
             'from': 'auto',
             'to': 翻译为,
             'salt': salt,
