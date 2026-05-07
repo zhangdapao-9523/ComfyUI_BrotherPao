@@ -115,8 +115,8 @@ class ImageColorMatch:
         batch_size = 目标图像.size(0)
         out = []
 
-        images_target = 目标图像 if batch_size == 1 else 目标图像.squeeze()
-        images_ref = 参考图像 if 参考图像.size(0) == 1 else 参考图像.squeeze()
+        images_target = 目标图像.squeeze()
+        images_ref = 参考图像.squeeze()
 
         image_ref_np = images_ref.numpy()
         images_target_np = images_target.numpy()
