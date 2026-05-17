@@ -1,17 +1,9 @@
-import numpy as np
 from PIL import Image
+import torch
 from torch import Tensor
 from torch.nn import functional as F
 from torchvision.transforms import ToTensor, ToPILImage
-import torch
-
-
-def pil2tensor(image: Image) -> torch.Tensor:
-    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
-
-
-def tensor2pil(t_image: torch.Tensor) -> Image:
-    return Image.fromarray(np.clip(255.0 * t_image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
+from .utils import pil2tensor, tensor2pil
 
 
 def calc_mean_std(feat: Tensor, eps=1e-5):
@@ -88,21 +80,23 @@ class ImageColorMatch:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "参考图像": ("IMAGE", {"tooltip": "颜色/风格的参考图像。"}),
-                "目标图像": ("IMAGE", {"tooltip": "需要调整颜色的目标图像，会被调整以匹配参考图像的色调。"}),
-                "匹配方法": (["wavelet", "adain", "mkl", "hm", "reinhard", "mvgd", "hm-mvgd-hm", "hm-mkl-hm"],),
+                "reference_image": ("IMAGE", {"tooltip": "颜色/风格的参考图像。"}),
+                "target_image": ("IMAGE", {"tooltip": "需要调整颜色的目标图像，会被调整以匹配参考图像的色调。"}),
+                "method": (["wavelet", "adain", "mkl", "hm", "reinhard", "mvgd", "hm-mvgd-hm", "hm-mkl-hm"],),
             }
         }
 
     RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("图像",)
+    RETURN_NAMES = ("image",)
     FUNCTION = "color_match"
     CATEGORY = "❤️‍🩹炮哥Nodes/图像操作"
     DESCRIPTION = "将目标图像的色调/风格匹配到参考图像。支持 wavelet/adain 等传统方法及 color-matcher 库方法。"
 
-    def color_match(self, 参考图像, 目标图像, 匹配方法):
-        if 匹配方法 in ["wavelet", "adain"]:
-            result = wavelet_color_fix(tensor2pil(目标图像), tensor2pil(参考图像)) if 匹配方法 == 'wavelet' else adain_color_fix(tensor2pil(目标图像), tensor2pil(参考图像))
+    def color_match(self, reference_image, target_image, method):
+        if method in ["wavelet", "adain"]:
+            target_pil = tensor2pil(target_image)
+            ref_pil = tensor2pil(reference_image)
+            result = wavelet_color_fix(target_pil, ref_pil) if method == 'wavelet' else adain_color_fix(target_pil, ref_pil)
             return (pil2tensor(result),)
 
         try:
@@ -110,25 +104,25 @@ class ImageColorMatch:
         except ImportError:
             raise ImportError("需要安装 color-matcher 库。请运行: pip install color-matcher")
 
-        参考图像 = 参考图像.cpu()
-        目标图像 = 目标图像.cpu()
-        batch_size = 目标图像.size(0)
+        reference_image = reference_image.cpu()
+        target_image = target_image.cpu()
+        batch_size = target_image.size(0)
         out = []
 
-        images_target = 目标图像.squeeze()
-        images_ref = 参考图像.squeeze()
+        images_target = target_image.squeeze()
+        images_ref = reference_image.squeeze()
 
         image_ref_np = images_ref.numpy()
         images_target_np = images_target.numpy()
 
-        if 参考图像.size(0) > 1 and 参考图像.size(0) != batch_size:
+        if reference_image.size(0) > 1 and reference_image.size(0) != batch_size:
             raise ValueError("ColorMatch: 使用单张参考图或与目标图批次数量相同的参考图。")
 
         cm = ColorMatcher()
         for i in range(batch_size):
             image_target_np = images_target_np if batch_size == 1 else images_target[i].numpy()
-            image_ref_np_i = image_ref_np if 参考图像.size(0) == 1 else images_ref[i].numpy()
-            image_result = cm.transfer(src=image_target_np, ref=image_ref_np_i, method=匹配方法)
+            image_ref_np_i = image_ref_np if reference_image.size(0) == 1 else images_ref[i].numpy()
+            image_result = cm.transfer(src=image_target_np, ref=image_ref_np_i, method=method)
             out.append(torch.from_numpy(image_result))
 
         result = torch.stack(out, dim=0).to(torch.float32)

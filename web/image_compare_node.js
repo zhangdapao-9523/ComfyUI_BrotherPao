@@ -1,12 +1,18 @@
 import { app } from "../../scripts/app.js";
+import { applyZhLabels } from "./shared_utils.js";
+
+const ZH_LABEL_MAP = {
+    "image_a": "原图",
+    "image_b": "对比图",
+};
 
 function fitContain(srcW, srcH, maxW, maxH) {
     if (!srcW || !srcH || !maxW || !maxH) {
         return { x: 0, y: 0, w: 0, h: 0 };
     }
-    var s = Math.min(maxW / srcW, maxH / srcH);
-    var w = Math.max(1, Math.floor(srcW * s));
-    var h = Math.max(1, Math.floor(srcH * s));
+    const s = Math.min(maxW / srcW, maxH / srcH);
+    const w = Math.max(1, Math.floor(srcW * s));
+    const h = Math.max(1, Math.floor(srcH * s));
     return {
         x: Math.floor((maxW - w) / 2),
         y: Math.floor((maxH - h) / 2),
@@ -16,8 +22,8 @@ function fitContain(srcW, srcH, maxW, maxH) {
 }
 
 function getDrawGeom(node) {
-    var margin = 10;
-    var topOffset = 40;
+    const margin = 10;
+    const topOffset = 40;
     return {
         drawX: margin,
         drawY: margin + topOffset,
@@ -27,18 +33,18 @@ function getDrawGeom(node) {
 }
 
 function drawCompareFrame(node, ctx) {
-    var geom = getDrawGeom(node);
-    var dx = geom.drawX, dy = geom.drawY, dw = geom.drawW, dh = geom.drawH;
+    const geom = getDrawGeom(node);
+    const dx = geom.drawX, dy = geom.drawY, dw = geom.drawW, dh = geom.drawH;
 
     ctx.fillStyle = "#111";
     ctx.fillRect(dx, dy, dw, dh);
 
-    var rectA = fitContain(
+    const rectA = fitContain(
         (node.imgA && node.imgA.width) || dw,
         (node.imgA && node.imgA.height) || dh,
         dw, dh
     );
-    var rectB = fitContain(
+    const rectB = fitContain(
         (node.imgB && node.imgB.width) || dw,
         (node.imgB && node.imgB.height) || dh,
         dw, dh
@@ -49,7 +55,7 @@ function drawCompareFrame(node, ctx) {
     }
 
     if (node.imgA) {
-        var splitX = dx + Math.floor(dw * node.sliderPos);
+        const splitX = dx + Math.floor(dw * node.sliderPos);
 
         ctx.save();
         ctx.beginPath();
@@ -99,9 +105,11 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== "BrotherPao_ImageCompare") return;
 
-        var origOnNodeCreated = nodeType.prototype.onNodeCreated;
+        const origOnNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             if (origOnNodeCreated) origOnNodeCreated.apply(this, arguments);
+
+            applyZhLabels(this, ZH_LABEL_MAP);
 
             if (!this.size || this.size[0] < 100 || this.size[1] < 100) {
                 this.size = [532, 582];
@@ -111,15 +119,15 @@ app.registerExtension({
             this.dragging = false;
             this.hovered = false;
 
-            var self = this;
+            const self = this;
 
             this.onMouseDown = function (_, pos) {
-                var geom = getDrawGeom(self);
-                var x = pos[0] - geom.drawX;
-                var y = pos[1] - geom.drawY;
+                const geom = getDrawGeom(self);
+                const x = pos[0] - geom.drawX;
+                const y = pos[1] - geom.drawY;
                 if (x < 0 || x > geom.drawW || y < 0 || y > geom.drawH) return false;
 
-                var splitX = geom.drawX + Math.floor(geom.drawW * self.sliderPos);
+                const splitX = geom.drawX + Math.floor(geom.drawW * self.sliderPos);
                 self.dragging = true;
                 if (Math.hypot(pos[0] - splitX, pos[1] - (geom.drawY + geom.drawH / 2)) >= 15) {
                     self.sliderPos = Math.max(0, Math.min(1, x / geom.drawW));
@@ -128,13 +136,13 @@ app.registerExtension({
             };
 
             this.onMouseMove = function (e, pos) {
-                var geom = getDrawGeom(self);
-                var splitX = geom.drawX + Math.floor(geom.drawW * self.sliderPos);
+                const geom = getDrawGeom(self);
+                const splitX = geom.drawX + Math.floor(geom.drawW * self.sliderPos);
                 self.hovered = Math.hypot(pos[0] - splitX, pos[1] - (geom.drawY + geom.drawH / 2)) < 15;
 
                 if (self.dragging) {
                     if (e && e.buttons !== undefined && e.buttons === 0) self.dragging = false;
-                    var nx = (pos[0] - geom.drawX) / geom.drawW;
+                    let nx = (pos[0] - geom.drawX) / geom.drawW;
                     nx = Math.max(0, Math.min(1, nx));
                     if (Math.abs(nx - self.sliderPos) > 0.001) self.sliderPos = nx;
                 }
@@ -147,7 +155,7 @@ app.registerExtension({
                 ctx.restore();
             };
 
-            var origOnExecuted = this.onExecuted;
+            const origOnExecuted = this.onExecuted;
             this.onExecuted = function (output) {
                 if (origOnExecuted) origOnExecuted.apply(this, arguments);
 
@@ -165,8 +173,8 @@ app.registerExtension({
                         if (app.canvas) app.canvas.setDirty(true);
                     };
 
-                    var aData = Array.isArray(output.b64_a) ? output.b64_a.join("") : output.b64_a;
-                    var bData = Array.isArray(output.b64_b) ? output.b64_b.join("") : output.b64_b;
+                    const aData = Array.isArray(output.b64_a) ? output.b64_a.join("") : output.b64_a;
+                    const bData = Array.isArray(output.b64_b) ? output.b64_b.join("") : output.b64_b;
                     self.imgA.src = "data:image/png;base64," + aData;
                     self.imgB.src = "data:image/png;base64," + bData;
                 }

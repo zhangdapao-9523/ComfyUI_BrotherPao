@@ -3,7 +3,7 @@ name = "comfyui_brotherpao"
 description = "BrotherPao's Private Nodes"
 version = "1.0.0"
 license = "LICENSE"
-dependencies = ["requests"]
+dependencies = ["requests", "color-matcher", "scipy", "pillow"]
 
 [project.urls]
 Repository = "https://github.com/zhangdapao-9523/ComfyUI_BrotherPao"
@@ -13,3 +13,7 @@ Repository = "https://github.com/zhangdapao-9523/ComfyUI_BrotherPao"
 PublisherId = "zhangdapao9523"
 DisplayName = "❤️‍🩹炮哥Nodes"
 Icon = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

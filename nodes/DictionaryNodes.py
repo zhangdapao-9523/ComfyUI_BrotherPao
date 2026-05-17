@@ -7,24 +7,24 @@ class DictionaryUpdate:
     def INPUT_TYPES(cls):
         base = {
             "required": {
-                "字典1": ("DICT", {"lazy": True}),
-                "字典2": ("DICT", {"lazy": True}),
+                "dict1": ("DICT", {"lazy": True}),
+                "dict2": ("DICT", {"lazy": True}),
             },
             "optional": {},
         }
         for i in range(3, MAX_DICT_COUNT + 1):
-            base["optional"][f"字典{i}"] = ("DICT", {"lazy": True})
+            base["optional"][f"dict{i}"] = ("DICT", {"lazy": True})
         return base
 
     RETURN_TYPES = ("DICT",)
-    RETURN_NAMES = ("合并后的字典",)
+    RETURN_NAMES = ("merged_dict",)
     FUNCTION = "dictionary_update"
     CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
 
     def check_lazy_status(self, **kwargs):
         needed = []
         for i in range(1, MAX_DICT_COUNT + 1):
-            key = f"字典{i}"
+            key = f"dict{i}"
             if key in kwargs and kwargs[key] is None:
                 needed.append(key)
         return needed
@@ -32,7 +32,7 @@ class DictionaryUpdate:
     def dictionary_update(self, **kwargs):
         merged = {}
         for i in range(1, MAX_DICT_COUNT + 1):
-            key = f"字典{i}"
+            key = f"dict{i}"
             value = kwargs.get(key)
             if value is not None and isinstance(value, dict):
                 merged.update(value)
@@ -44,23 +44,23 @@ class DictionaryGet:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "字典": ("DICT",),
-                "键": ("STRING", {"default": "", "multiline": False}),
+                "dict": ("DICT",),
+                "key": ("STRING", {"default": "", "multiline": False}),
             },
             "optional": {
-                "默认值": ("STRING", {"default": "", "multiline": False}),
+                "default_value": ("STRING", {"default": "", "multiline": False}),
             },
         }
 
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("值",)
+    RETURN_NAMES = ("value",)
     FUNCTION = "dictionary_get"
     CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
 
-    def dictionary_get(self, 字典, 键, 默认值=""):
-        if not isinstance(字典, dict):
-            return (str(默认值),)
-        return (str(字典.get(键, 默认值)),)
+    def dictionary_get(self, dict, key, default_value=""):
+        if not hasattr(dict, 'get'):
+            return (str(default_value),)
+        return (str(dict.get(key, default_value)),)
 
 
 class DictionaryNew:
@@ -68,28 +68,28 @@ class DictionaryNew:
     def INPUT_TYPES(cls):
         base = {
             "required": {
-                "键1": ("STRING", {"default": "", "multiline": False}),
-                "值1": ("STRING", {"default": "", "multiline": True}),
+                "key1": ("STRING", {"default": "", "multiline": False}),
+                "value1": ("STRING", {"default": "", "multiline": True}),
             },
             "optional": {},
         }
         for i in range(2, MAX_KV_PAIRS + 1):
-            base["optional"][f"键{i}"] = ("STRING", {"default": "", "multiline": False})
-            base["optional"][f"值{i}"] = ("STRING", {"default": "", "multiline": True})
+            base["optional"][f"key{i}"] = ("STRING", {"default": "", "multiline": False})
+            base["optional"][f"value{i}"] = ("STRING", {"default": "", "multiline": True})
         return base
 
     RETURN_TYPES = ("DICT",)
-    RETURN_NAMES = ("字典",)
+    RETURN_NAMES = ("dict",)
     FUNCTION = "dictionary_new"
     CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
 
-    def dictionary_new(self, 键1="", 值1="", **kwargs):
+    def dictionary_new(self, key1="", value1="", **kwargs):
         result = {}
-        if 键1:
-            result[键1] = 值1
+        if key1:
+            result[key1] = value1
         for i in range(2, MAX_KV_PAIRS + 1):
-            k = kwargs.get(f"键{i}", "")
-            v = kwargs.get(f"值{i}", "")
+            k = kwargs.get(f"key{i}", "")
+            v = kwargs.get(f"value{i}", "")
             if k:
                 result[k] = v
         return (result,)

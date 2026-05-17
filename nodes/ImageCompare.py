@@ -1,9 +1,12 @@
 import base64
 import gc
 import io
+import logging
 
 import numpy
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 BASE64_CHUNK_SIZE = 65536
 
@@ -13,8 +16,8 @@ class ImageCompareNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "原图": ("IMAGE",),
-                "对比图": ("IMAGE",),
+                "image_a": ("IMAGE",),
+                "image_b": ("IMAGE",),
             },
         }
 
@@ -23,13 +26,16 @@ class ImageCompareNode:
     CATEGORY = "❤️‍🩹炮哥Nodes/图像操作"
     OUTPUT_NODE = True
 
-    def compare(self, 原图, 对比图):
-        if 原图 is None or 对比图 is None or len(原图) == 0 or len(对比图) == 0:
+    def compare(self, image_a, image_b):
+        if image_a is None or image_b is None or len(image_a) == 0 or len(image_b) == 0:
             return {}
 
+        if image_a.shape[0] > 1 or image_b.shape[0] > 1:
+            logger.warning("图像对比节点仅处理第一帧，批次中的其余帧将被忽略")
+
         try:
-            pil_a = self._tensor_to_pil(原图)
-            pil_b = self._tensor_to_pil(对比图)
+            pil_a = self._tensor_to_pil(image_a)
+            pil_b = self._tensor_to_pil(image_b)
 
             b64_a = self._pil_to_base64_chunks(pil_a)
             b64_b = self._pil_to_base64_chunks(pil_b)

@@ -1,6 +1,26 @@
 import { app } from "../../scripts/app.js";
+import { applyZhLabels } from "./shared_utils.js";
 
-const BASE_INPUT = "字典";
+const ZH_LABEL_MAP = {
+    "dict": "字典",
+    "key": "键",
+    "value": "值",
+    "default_value": "默认值",
+    "merged_dict": "合并后的字典",
+};
+
+function getZhLabel(name) {
+    if (ZH_LABEL_MAP[name]) return ZH_LABEL_MAP[name];
+    const dictMatch = name.match(/^dict(\d+)$/);
+    if (dictMatch) return "字典" + dictMatch[1];
+    const keyMatch = name.match(/^key(\d+)$/);
+    if (keyMatch) return "键" + keyMatch[1];
+    const valueMatch = name.match(/^value(\d+)$/);
+    if (valueMatch) return "值" + valueMatch[1];
+    return null;
+}
+
+const BASE_INPUT = "dict";
 const ADD_TYPE = "DICT";
 const MIN_INPUTS = 2;
 const MAX_INPUTS = 10;
@@ -9,7 +29,7 @@ app.registerExtension({
     name: "ComfyUI_BrotherPao.DynamicDictMerge",
     async beforeRegisterNodeDef(nodeType, nodeData) {
         const typeName = nodeData?.name || nodeType?.type || nodeType?.title || nodeType?.name;
-        if (typeName !== "DictionaryUpdate") return;
+        if (typeName !== "BrotherPao_DictionaryUpdate") return;
 
         const originalOnConnectionsChange = nodeType.prototype.onConnectionsChange;
 
@@ -28,10 +48,16 @@ app.registerExtension({
             }
         }
 
+        let compactRafId = null;
         function scheduleCompact(node) {
-            setTimeout(() => compactNodeHeight(node), 0);
-            setTimeout(() => compactNodeHeight(node), 120);
-            setTimeout(() => compactNodeHeight(node), 600);
+            if (compactRafId != null) return;
+            compactRafId = requestAnimationFrame(() => {
+                compactRafId = null;
+                compactNodeHeight(node);
+                setTimeout(() => {
+                    compactNodeHeight(node);
+                }, 200);
+            });
         }
 
         function listDynamicInputs(node) {
@@ -63,7 +89,8 @@ app.registerExtension({
         function addNextInput(node) {
             const count = listDynamicInputs(node).length;
             if (count >= MAX_INPUTS) return;
-            node.addInput(nextInputName(node), ADD_TYPE);
+            const name = nextInputName(node);
+            node.addInput(name, ADD_TYPE);
         }
 
         function renumberDynamicInputs(node) {
@@ -123,6 +150,7 @@ app.registerExtension({
         nodeType.prototype.onConnectionsChange = function (type, slot, connected, link_info, output) {
             const rv = originalOnConnectionsChange?.call(this, type, slot, connected, link_info, output);
             try {
+                if (typeof LiteGraph === 'undefined') return rv;
                 if (type !== LiteGraph.INPUT) return rv;
 
                 ensureMinInputs(this);
@@ -154,6 +182,14 @@ app.registerExtension({
 
                 ensureSingleTrailingEmpty(this);
                 renumberDynamicInputs(this);
+
+                for (const inp of this.inputs || []) {
+                    const zhLabel = getZhLabel(inp.name);
+                    if (zhLabel) {
+                        inp.label = zhLabel;
+                    }
+                }
+
                 this.setDirtyCanvas(true, true);
                 scheduleCompact(this);
             } catch (err) {
@@ -166,6 +202,20 @@ app.registerExtension({
         nodeType.prototype.onAdded = function () {
             originalOnAdded?.call(this);
             try {
+                for (const inp of this.inputs || []) {
+                    const zhLabel = getZhLabel(inp.name);
+                    if (zhLabel) {
+                        inp.label = zhLabel;
+                    }
+                }
+
+                for (const o of this.outputs || []) {
+                    const zhLabel = getZhLabel(o.name);
+                    if (zhLabel) {
+                        o.label = zhLabel;
+                    }
+                }
+
                 ensureMinInputs(this);
                 ensureSingleTrailingEmpty(this);
                 renumberDynamicInputs(this);
@@ -175,5 +225,24 @@ app.registerExtension({
                 console.error("[BrotherPao.DynamicDictMerge] onAdded error", err);
             }
         };
+    }
+});
+
+app.registerExtension({
+    name: "ComfyUI_BrotherPao.DictLabelTranslation",
+    nodeCreated(node) {
+        const dictNodeTypes = ["BrotherPao_DictionaryGet", "BrotherPao_DictionaryNew"];
+        if (dictNodeTypes.indexOf(node.comfyClass) === -1) {
+            return;
+        }
+
+        for (const w of node.widgets || []) {
+            const zhLabel = getZhLabel(w.name);
+            if (zhLabel) {
+                w.label = zhLabel;
+            }
+        }
+
+        applyZhLabels(node, ZH_LABEL_MAP);
     }
 });

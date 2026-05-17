@@ -33,13 +33,19 @@ def load_config():
 def save_config(config):
     with _lock:
         dirpath = os.path.dirname(CONFIG_FILE)
-        with tempfile.NamedTemporaryFile(
-            mode='w', encoding='utf-8',
-            dir=dirpath, delete=False, suffix='.tmp'
-        ) as tf:
-            json.dump(config, tf, indent=4, ensure_ascii=False)
-            tmpname = tf.name
-        os.replace(tmpname, CONFIG_FILE)
+        tmpname = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w', encoding='utf-8',
+                dir=dirpath, delete=False, suffix='.tmp'
+            ) as tf:
+                json.dump(config, tf, indent=4, ensure_ascii=False)
+                tmpname = tf.name
+            os.replace(tmpname, CONFIG_FILE)
+        except Exception:
+            if tmpname and os.path.exists(tmpname):
+                os.unlink(tmpname)
+            raise
 
 
 def get_baidu_credentials():
