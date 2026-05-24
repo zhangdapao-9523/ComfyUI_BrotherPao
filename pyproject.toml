@@ -3,7 +3,7 @@ name = "comfyui_brotherpao"
 description = "BrotherPao's Private Nodes"
 version = "1.0.0"
 license = "LICENSE"
-dependencies = ["requests", "color-matcher", "scipy", "pillow"]
+dependencies = ["requests", "color-matcher", "scipy", "pillow", "ultralytics"]
 
 [project.urls]
 Repository = "https://github.com/zhangdapao-9523/ComfyUI_BrotherPao"

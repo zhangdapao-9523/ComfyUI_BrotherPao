@@ -6,6 +6,14 @@ from torchvision.transforms import ToTensor, ToPILImage
 from .utils import pil2tensor, tensor2pil
 
 
+def _pil_to_norm_tensor(pil_image: Image) -> Tensor:
+    return ToTensor()(pil_image).unsqueeze(0)
+
+
+def _norm_tensor_to_pil(tensor: Tensor) -> Image:
+    return ToPILImage()(tensor.squeeze(0).clamp_(0.0, 1.0))
+
+
 def calc_mean_std(feat: Tensor, eps=1e-5):
     size = feat.size()
     assert len(size) == 4, 'The input feature should be 4D tensor.'
@@ -25,12 +33,10 @@ def adaptive_instance_normalization(content_feat: Tensor, style_feat: Tensor):
 
 
 def adain_color_fix(target: Image, source: Image):
-    to_tensor = ToTensor()
-    target_tensor = to_tensor(target).unsqueeze(0)
-    source_tensor = to_tensor(source).unsqueeze(0)
+    target_tensor = _pil_to_norm_tensor(target)
+    source_tensor = _pil_to_norm_tensor(source)
     result_tensor = adaptive_instance_normalization(target_tensor, source_tensor)
-    to_image = ToPILImage()
-    return to_image(result_tensor.squeeze(0).clamp_(0.0, 1.0))
+    return _norm_tensor_to_pil(result_tensor)
 
 
 def wavelet_blur(image: Tensor, radius: int):
@@ -67,12 +73,10 @@ def wavelet_reconstruction(content_feat: Tensor, style_feat: Tensor):
 
 def wavelet_color_fix(target: Image, source: Image):
     source = source.resize(target.size, resample=Image.Resampling.LANCZOS)
-    to_tensor = ToTensor()
-    target_tensor = to_tensor(target).unsqueeze(0)
-    source_tensor = to_tensor(source).unsqueeze(0)
+    target_tensor = _pil_to_norm_tensor(target)
+    source_tensor = _pil_to_norm_tensor(source)
     result_tensor = wavelet_reconstruction(target_tensor, source_tensor)
-    to_image = ToPILImage()
-    return to_image(result_tensor.squeeze(0).clamp_(0.0, 1.0))
+    return _norm_tensor_to_pil(result_tensor)
 
 
 class ImageColorMatch:

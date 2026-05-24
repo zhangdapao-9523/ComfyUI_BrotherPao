@@ -1,3 +1,18 @@
+export const COMMON_ZH_LABELS = {
+    "image": "图像",
+    "mask": "遮罩",
+};
+
+export function findWidgetByName(node, name) {
+    return node.widgets ? node.widgets.find((w) => w.name === name) : null;
+}
+
+export function toggleWidget(node, widget, show = false) {
+    if (!widget) return;
+    widget.disabled = !show;
+    widget.linkedWidgets?.forEach(w => toggleWidget(node, w, show));
+}
+
 export function translateComboWidget(widget, enToZh, zhToEn) {
     if (!widget || !widget.options || !widget.options.values) return;
 

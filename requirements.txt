@@ -1,3 +1,5 @@
 requests
 color-matcher
 scipy
+pillow
+ultralytics

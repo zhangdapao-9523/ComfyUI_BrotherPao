@@ -55,33 +55,23 @@ class ImageTileBatch:
     CATEGORY = "❤️‍🩹炮哥Nodes/图像分块拼接"
     DESCRIPTION = IMAGE_TILE_NODE_DESC
 
-    def _calculate_tile_size(self, raw_W, raw_H, width_factor, height_factor, overlap_rate):
+    @staticmethod
+    def _calc_axis_tile_size(raw_size, factor, overlap_rate):
+        if factor == 1:
+            return raw_size
         if overlap_rate == 0:
-            if width_factor == 1:
-                tile_width = raw_W
-            else:
-                tile_width = int(raw_W / width_factor)
-                if tile_width % 8 != 0:
-                    tile_width = ((tile_width + 7) // 8) * 8
-            if height_factor == 1:
-                tile_height = raw_H
-            else:
-                tile_height = int(raw_H / height_factor)
-                if tile_height % 8 != 0:
-                    tile_height = ((tile_height + 7) // 8) * 8
+            tile = int(raw_size / factor)
+            if tile % 8 != 0:
+                tile = ((tile + 7) // 8) * 8
         else:
-            if width_factor == 1:
-                tile_width = raw_W
-            else:
-                tile_width = int(raw_W / (1 + (width_factor - 1) * (1 - overlap_rate)))
-                if tile_width % 8 != 0:
-                    tile_width = (tile_width // 8) * 8
-            if height_factor == 1:
-                tile_height = raw_H
-            else:
-                tile_height = int(raw_H / (1 + (height_factor - 1) * (1 - overlap_rate)))
-                if tile_height % 8 != 0:
-                    tile_height = (tile_height // 8) * 8
+            tile = int(raw_size / (1 + (factor - 1) * (1 - overlap_rate)))
+            if tile % 8 != 0:
+                tile = (tile // 8) * 8
+        return tile
+
+    def _calculate_tile_size(self, raw_W, raw_H, width_factor, height_factor, overlap_rate):
+        tile_width = self._calc_axis_tile_size(raw_W, width_factor, overlap_rate)
+        tile_height = self._calc_axis_tile_size(raw_H, height_factor, overlap_rate)
         return tile_width, tile_height
 
     def _calculate_step(self, size, tile_size):
@@ -165,51 +155,56 @@ class ImageAssemble:
         return Image.fromarray(arr, mode='L')
 
     def _blend_tiles(self, tile1, tile2, overlap_size, direction, padding):
-        blend_size = padding
-        if blend_size > overlap_size:
-            blend_size = overlap_size
+        blend_size = min(padding, overlap_size)
+        is_h = direction == 'horizontal'
+
+        def tile_dim(t):
+            return (t.width, t.height) if is_h else (t.height, t.width)
+
+        main1, cross1 = tile_dim(tile1)
+        main2, cross2 = tile_dim(tile2)
+        result_main = main1 + main2 - overlap_size
+        result_cross = cross1
+
         if blend_size == 0:
-            if direction == 'horizontal':
-                result = Image.new("RGB", (tile1.width + tile2.width - overlap_size, tile1.height))
-                result.paste(tile1.crop((0, 0, tile1.width - overlap_size, tile1.height)), (0, 0))
-                result.paste(tile2, (tile1.width - overlap_size, 0))
+            if is_h:
+                result = Image.new("RGB", (result_main, result_cross))
+                result.paste(tile1.crop((0, 0, main1 - overlap_size, cross1)), (0, 0))
+                result.paste(tile2, (main1 - overlap_size, 0))
             else:
-                result = Image.new("RGB", (tile1.width, tile1.height + tile2.height - overlap_size))
-                result.paste(tile1.crop((0, 0, tile1.width, tile1.height - overlap_size)), (0, 0))
-                result.paste(tile2, (0, tile1.height - overlap_size))
+                result = Image.new("RGB", (result_cross, result_main))
+                result.paste(tile1.crop((0, 0, cross1, main1 - overlap_size)), (0, 0))
+                result.paste(tile2, (0, main1 - overlap_size))
             return result
 
         offset_total = overlap_size - blend_size
-        offset_left = offset_total // 2
-        offset_right = offset_total - offset_left
+        offset_before = offset_total // 2
+        offset_after = offset_total - offset_before
 
-        size = (blend_size, tile1.height) if direction == 'horizontal' else (tile1.width, blend_size)
-        mask = self._create_gradient_mask(size, direction)
+        mask_size = (blend_size, result_cross) if is_h else (result_cross, blend_size)
+        mask = self._create_gradient_mask(mask_size, direction)
 
-        if direction == 'horizontal':
-            crop_tile1 = tile1.crop((tile1.width - overlap_size + offset_left, 0, tile1.width - offset_right, tile1.height))
-            crop_tile2 = tile2.crop((offset_left, 0, offset_left + blend_size, tile2.height))
-            if crop_tile1.size != crop_tile2.size:
-                raise ValueError(f"Crop sizes do not match: {crop_tile1.size} vs {crop_tile2.size}")
-            blended = Image.composite(crop_tile1, crop_tile2, mask)
-            result = Image.new("RGB", (tile1.width + tile2.width - overlap_size, tile1.height))
-            result.paste(tile1.crop((0, 0, tile1.width - overlap_size + offset_left, tile1.height)), (0, 0))
-            result.paste(blended, (tile1.width - overlap_size + offset_left, 0))
-            result.paste(tile2.crop((offset_left + blend_size, 0, tile2.width, tile2.height)), (tile1.width - offset_right, 0))
+        if is_h:
+            crop1 = tile1.crop((main1 - overlap_size + offset_before, 0, main1 - offset_after, cross1))
+            crop2 = tile2.crop((offset_before, 0, offset_before + blend_size, cross2))
         else:
-            offset_top = offset_total // 2
-            offset_bottom = offset_total - offset_top
-            size = (tile1.width, blend_size)
-            mask = self._create_gradient_mask(size, direction)
-            crop_tile1 = tile1.crop((0, tile1.height - overlap_size + offset_top, tile1.width, tile1.height - offset_bottom))
-            crop_tile2 = tile2.crop((0, offset_top, tile2.width, offset_top + blend_size))
-            if crop_tile1.size != crop_tile2.size:
-                raise ValueError(f"Crop sizes do not match: {crop_tile1.size} vs {crop_tile2.size}")
-            blended = Image.composite(crop_tile1, crop_tile2, mask)
-            result = Image.new("RGB", (tile1.width, tile1.height + tile2.height - overlap_size))
-            result.paste(tile1.crop((0, 0, tile1.width, tile1.height - overlap_size + offset_top)), (0, 0))
-            result.paste(blended, (0, tile1.height - overlap_size + offset_top))
-            result.paste(tile2.crop((0, offset_top + blend_size, tile2.width, tile2.height)), (0, tile1.height - offset_bottom))
+            crop1 = tile1.crop((0, main1 - overlap_size + offset_before, cross1, main1 - offset_after))
+            crop2 = tile2.crop((0, offset_before, cross2, offset_before + blend_size))
+
+        if crop1.size != crop2.size:
+            raise ValueError(f"Crop sizes do not match: {crop1.size} vs {crop2.size}")
+        blended = Image.composite(crop1, crop2, mask)
+
+        if is_h:
+            result = Image.new("RGB", (result_main, result_cross))
+            result.paste(tile1.crop((0, 0, main1 - overlap_size + offset_before, cross1)), (0, 0))
+            result.paste(blended, (main1 - overlap_size + offset_before, 0))
+            result.paste(tile2.crop((offset_before + blend_size, 0, main2, cross2)), (main1 - offset_after, 0))
+        else:
+            result = Image.new("RGB", (result_cross, result_main))
+            result.paste(tile1.crop((0, 0, cross1, main1 - overlap_size + offset_before)), (0, 0))
+            result.paste(blended, (0, main1 - overlap_size + offset_before))
+            result.paste(tile2.crop((0, offset_before + blend_size, cross2, main2)), (0, main1 - offset_after))
         return result
 
     def assemble_image(self, tile_batch, tile_info, blend_width):

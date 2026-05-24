@@ -40,7 +40,7 @@ class BaiduTransDevApi:
 
         appid, appkey = get_baidu_credentials()
         if not appid or not appkey:
-            return ("配置文件不存在或缺少 appid/appkey，请在 config.json 中配置 baidu_translate.appid 和 baidu_translate.appkey",)
+            return ("[错误]配置文件不存在或缺少 appid/appkey，请在 config.json 中配置 baidu_translate.appid 和 baidu_translate.appkey",)
 
         salt = random.randint(32768, 65536)
         sign_text = appid + text + str(salt) + appkey
@@ -78,11 +78,11 @@ class BaiduTransDevApi:
         except requests.exceptions.Timeout:
             return ("百度翻译请求超时，请稍后重试",)
         except requests.exceptions.ConnectionError:
-            return ("无法连接到百度翻译服务器，请检查网络",)
+            return ("[错误]无法连接到百度翻译服务器，请检查网络",)
         except requests.exceptions.RequestException:
             return ("网络请求异常，请稍后重试",)
         except Exception:
-            return ("翻译过程发生异常，请稍后重试",)
+            return ("[错误]翻译过程发生异常，请稍后重试",)
 
 
 NODE_CLASS_MAPPINGS = {

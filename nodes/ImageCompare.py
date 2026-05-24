@@ -3,8 +3,7 @@ import gc
 import io
 import logging
 
-import numpy
-from PIL import Image
+from .utils import tensor2pil
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +33,8 @@ class ImageCompareNode:
             logger.warning("图像对比节点仅处理第一帧，批次中的其余帧将被忽略")
 
         try:
-            pil_a = self._tensor_to_pil(image_a)
-            pil_b = self._tensor_to_pil(image_b)
+            pil_a = tensor2pil(image_a)
+            pil_b = tensor2pil(image_b)
 
             b64_a = self._pil_to_base64_chunks(pil_a)
             b64_b = self._pil_to_base64_chunks(pil_b)
@@ -43,16 +42,6 @@ class ImageCompareNode:
             return {"ui": {"b64_a": b64_a, "b64_b": b64_b}}
         finally:
             gc.collect()
-
-    @staticmethod
-    def _tensor_to_pil(img_tensor):
-        try:
-            arr = (
-                img_tensor[0].cpu().numpy() * 255
-            ).clip(0, 255).astype(numpy.uint8)
-            return Image.fromarray(arr)
-        except Exception as e:
-            raise ValueError(f"图像张量转换失败: {e}") from e
 
     @staticmethod
     def _pil_to_base64_chunks(img):

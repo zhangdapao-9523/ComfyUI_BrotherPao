@@ -29,3 +29,13 @@ async def update_config(request):
     except Exception as e:
         logger.error("[BrotherPao] update_config failed: %s", e)
         return web.json_response({"error": "更新配置失败"}, status=500)
+
+
+@PromptServer.instance.routes.get("/brotherpao/prompt_rules")
+async def get_prompt_rules(request):
+    try:
+        from .nodes.QwenMultiangle import PROMPT_RULES
+        return web.json_response(PROMPT_RULES)
+    except Exception as e:
+        logger.error("[BrotherPao] get_prompt_rules failed: %s", e)
+        return web.json_response({"error": "读取提示词规则失败"}, status=500)

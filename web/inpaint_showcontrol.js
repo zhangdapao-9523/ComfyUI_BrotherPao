@@ -1,9 +1,8 @@
 import { app } from "../../scripts/app.js";
-import { translateComboWidget, applyZhLabels } from "./shared_utils.js";
+import { translateComboWidget, applyZhLabels, COMMON_ZH_LABELS, findWidgetByName, toggleWidget } from "./shared_utils.js";
 
 const ZH_LABEL_MAP = {
-    "image": "图像",
-    "mask": "遮罩",
+    ...COMMON_ZH_LABELS,
     "optional_context_mask": "上下文遮罩",
     "downscale_algorithm": "缩小算法",
     "upscale_algorithm": "放大算法",
@@ -46,15 +45,6 @@ function inpaintCropAndStitchHandler(node) {
     return;
 }
 
-const findWidgetByName = (node, name) => {
-    return node.widgets ? node.widgets.find((w) => w.name === name) : null;
-};
-
-function toggleWidget(node, widget, show = false, suffix = "") {
-    if (!widget) return;
-    widget.disabled = !show;
-    widget.linkedWidgets?.forEach(w => toggleWidget(node, w, show, ":" + widget.name));
-}
 
 app.registerExtension({
     name: "inpaint-cropandstitch.showcontrol",

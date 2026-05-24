@@ -9,3 +9,5 @@
 字典操作提取自：<https://github.com/ltdrdata/was-node-suite-comfyui.git>
 
 局部拼接提取自：<https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch.git>
+
+多角度拼接提取自：<https://github.com/jtydhr88/ComfyUI-qwenmultiangle>

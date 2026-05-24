@@ -23,27 +23,28 @@ class ProcessorLogic(ABC):
     def batched_findcontextarea_m(self, mask):
         pass
 
-    def rescale_i(self, samples, width, height, algorithm: str):
+    def rescale(self, samples, width, height, algorithm: str, is_image=True):
         original_device = samples.device
-        samples = samples.movedim(-1, 1)
+        if is_image:
+            samples = samples.movedim(-1, 1)
         algorithm_enum = getattr(Image, algorithm.upper())
         results = []
         for i in range(samples.shape[0]):
             samples_pil: Image.Image = F.to_pil_image(samples[i].float().cpu()).resize((width, height), algorithm_enum)
-            results.append(F.to_tensor(samples_pil))
+            tensor = F.to_tensor(samples_pil)
+            if not is_image:
+                tensor = tensor.squeeze(0)
+            results.append(tensor)
         samples = torch.stack(results, dim=0).to(original_device)
-        samples = samples.movedim(1, -1)
+        if is_image:
+            samples = samples.movedim(1, -1)
         return samples
 
+    def rescale_i(self, samples, width, height, algorithm: str):
+        return self.rescale(samples, width, height, algorithm, is_image=True)
+
     def rescale_m(self, samples, width, height, algorithm: str):
-        original_device = samples.device
-        algorithm_enum = getattr(Image, algorithm.upper())
-        results = []
-        for i in range(samples.shape[0]):
-            samples_pil: Image.Image = F.to_pil_image(samples[i].float().cpu()).resize((width, height), algorithm_enum)
-            results.append(F.to_tensor(samples_pil).squeeze(0))
-        samples = torch.stack(results, dim=0).to(original_device)
-        return samples
+        return self.rescale(samples, width, height, algorithm, is_image=False)
 
     def fillholes_iterative_hipass_fill_m(self, samples):
         original_device = samples.device
@@ -142,20 +143,27 @@ class ProcessorLogic(ABC):
                 new_pos = -((new_size - image_size) // 2)
         return new_pos
 
-    def crop_magic_im(self, image, mask, x, y, w, h, target_w, target_h, padding, downscale_algorithm, upscale_algorithm, resize_output=True):
-        image = image.clone()
-        mask = mask.clone()
+    def _expand_canvas_with_edge_replication(self, image, image_h, image_w, up_padding, down_padding, left_padding, right_padding):
+        expanded_image = torch.zeros((image.shape[0], image_h + up_padding + down_padding, image_w + left_padding + right_padding, image.shape[3]), device=image.device)
+        image = image.permute(0, 3, 1, 2)
+        expanded_image = expanded_image.permute(0, 3, 1, 2)
 
-        if target_w <= 0 or target_h <= 0 or w == 0 or h == 0:
-            return image, 0, 0, image.shape[2], image.shape[1], image, mask, 0, 0, image.shape[2], image.shape[1]
+        expanded_image[:, :, up_padding:up_padding + image_h, left_padding:left_padding + image_w] = image
 
-        if padding != 0:
-            target_w = self.pad_to_multiple(target_w, padding)
-            target_h = self.pad_to_multiple(target_h, padding)
+        if up_padding > 0:
+            expanded_image[:, :, :up_padding, left_padding:left_padding + image_w] = expanded_image[:, :, up_padding:up_padding + 1, left_padding:left_padding + image_w].repeat(1, 1, up_padding, 1)
+        if down_padding > 0:
+            expanded_image[:, :, -down_padding:, left_padding:left_padding + image_w] = expanded_image[:, :, up_padding + image_h - 1:up_padding + image_h, left_padding:left_padding + image_w].repeat(1, 1, down_padding, 1)
+        if left_padding > 0:
+            expanded_image[:, :, up_padding:up_padding + image_h, :left_padding] = expanded_image[:, :, up_padding:up_padding + image_h, left_padding:left_padding+1].repeat(1, 1, 1, left_padding)
+        if right_padding > 0:
+            expanded_image[:, :, up_padding:up_padding + image_h, -right_padding:] = expanded_image[:, :, up_padding:up_padding + image_h, -right_padding-1:-right_padding].repeat(1, 1, 1, right_padding)
 
+        expanded_image = expanded_image.permute(0, 2, 3, 1)
+        return expanded_image
+
+    def _compute_crop_bounds(self, x, y, w, h, target_w, target_h, image_w, image_h, resize_output):
         target_aspect_ratio = target_w / target_h
-
-        B, image_h, image_w, C = image.shape
         context_aspect_ratio = w / h
         if context_aspect_ratio < target_aspect_ratio:
             new_w = int(h * target_aspect_ratio)
@@ -180,44 +188,29 @@ class ProcessorLogic(ABC):
                 new_h = target_h
                 new_y = self._adjust_axis_bounds(new_y, new_h, image_h)
 
-        up_padding, down_padding, left_padding, right_padding = 0, 0, 0, 0
+        return new_x, new_y, new_w, new_h
 
-        expanded_image_w = image_w
-        expanded_image_h = image_h
+    def crop_magic_im(self, image, mask, x, y, w, h, target_w, target_h, padding, downscale_algorithm, upscale_algorithm, resize_output=True):
+        image = image.clone()
+        mask = mask.clone()
 
-        if new_x < 0:
-            left_padding = -new_x
-            expanded_image_w += left_padding
-        if new_x + new_w > image_w:
-            right_padding = (new_x + new_w - image_w)
-            expanded_image_w += right_padding
-        if new_y < 0:
-            up_padding = -new_y
-            expanded_image_h += up_padding
-        if new_y + new_h > image_h:
-            down_padding = (new_y + new_h - image_h)
-            expanded_image_h += down_padding
+        if target_w <= 0 or target_h <= 0 or w == 0 or h == 0:
+            return image, 0, 0, image.shape[2], image.shape[1], image, mask, 0, 0, image.shape[2], image.shape[1]
 
-        expanded_image = torch.zeros((image.shape[0], expanded_image_h, expanded_image_w, image.shape[3]), device=image.device)
-        expanded_mask = torch.zeros((mask.shape[0], expanded_image_h, expanded_image_w), device=mask.device)
+        if padding != 0:
+            target_w = self.pad_to_multiple(target_w, padding)
+            target_h = self.pad_to_multiple(target_h, padding)
 
-        image = image.permute(0, 3, 1, 2)
-        expanded_image = expanded_image.permute(0, 3, 1, 2)
+        B, image_h, image_w, C = image.shape
+        new_x, new_y, new_w, new_h = self._compute_crop_bounds(x, y, w, h, target_w, target_h, image_w, image_h, resize_output)
 
-        expanded_image[:, :, up_padding:up_padding + image_h, left_padding:left_padding + image_w] = image
+        up_padding = max(-new_y, 0)
+        down_padding = max(new_y + new_h - image_h, 0)
+        left_padding = max(-new_x, 0)
+        right_padding = max(new_x + new_w - image_w, 0)
 
-        if up_padding > 0:
-            expanded_image[:, :, :up_padding, left_padding:left_padding + image_w] = expanded_image[:, :, up_padding:up_padding + 1, left_padding:left_padding + image_w].repeat(1, 1, up_padding, 1)
-        if down_padding > 0:
-            expanded_image[:, :, -down_padding:, left_padding:left_padding + image_w] = expanded_image[:, :, up_padding + image_h - 1:up_padding + image_h, left_padding:left_padding + image_w].repeat(1, 1, down_padding, 1)
-        if left_padding > 0:
-            expanded_image[:, :, up_padding:up_padding + image_h, :left_padding] = expanded_image[:, :, up_padding:up_padding + image_h, left_padding:left_padding+1].repeat(1, 1, 1, left_padding)
-        if right_padding > 0:
-            expanded_image[:, :, up_padding:up_padding + image_h, -right_padding:] = expanded_image[:, :, up_padding:up_padding + image_h, -right_padding-1:-right_padding].repeat(1, 1, 1, right_padding)
-
-        expanded_image = expanded_image.permute(0, 2, 3, 1)
-        image = image.permute(0, 2, 3, 1)
-
+        expanded_image = self._expand_canvas_with_edge_replication(image, image_h, image_w, up_padding, down_padding, left_padding, right_padding)
+        expanded_mask = torch.zeros((mask.shape[0], image_h + up_padding + down_padding, image_w + left_padding + right_padding), device=mask.device)
         expanded_mask[:, up_padding:up_padding + image_h, left_padding:left_padding + image_w] = mask
 
         cto_x = left_padding
