@@ -25,7 +25,7 @@ class ImageCompareNode:
     CATEGORY = "❤️‍🩹炮哥Nodes/图像操作"
     OUTPUT_NODE = True
 
-    def compare(self, image_a, image_b):
+    def compare(self, image_a=None, image_b=None):
         if image_a is None or image_b is None or len(image_a) == 0 or len(image_b) == 0:
             return {}
 
