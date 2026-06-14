@@ -9,6 +9,8 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter, grey_dilation, binary_closing, binary_fill_holes
 from abc import ABC, abstractmethod
 
+from comfy_api.latest import io
+
 
 class ProcessorLogic(ABC):
     @abstractmethod
@@ -376,45 +378,42 @@ class GPUProcessorLogic(ProcessorLogic):
         return None, x_min, y_min, w, h
 
 
-class InpaintCropImproved:
+class InpaintCropImproved(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE",),
+    def define_schema(cls):
+        algorithms = ["nearest", "bilinear", "bicubic", "lanczos", "box", "hamming"]
+        return io.Schema(
+            node_id="BrotherPao_InpaintCropImproved",
+            display_name="内补裁剪",
+            category="❤️‍🩹炮哥Nodes/图像内补拼接",
+            description="根据遮罩裁剪图像用于内补绘制。上下文遮罩用于定义额外的保留区域作为上下文参考。",
+            inputs=[
+                io.Image.Input("image"),
+                io.Combo.Input("downscale_algorithm", options=algorithms, default="bilinear", tooltip="缩小时使用的缩放算法"),
+                io.Combo.Input("upscale_algorithm", options=algorithms, default="bicubic", tooltip="放大时使用的缩放算法"),
+                io.Boolean.Input("mask_fill_holes", default=True, tooltip="填充遮罩中被完全包围的空洞区域"),
+                io.Int.Input("mask_expand_pixels", default=0, min=0, max=nodes.MAX_RESOLUTION, step=1, tooltip="处理前将遮罩向外扩展的像素数"),
+                io.Boolean.Input("mask_invert", default=False, tooltip="反转遮罩，使遮罩区域变为保留区域"),
+                io.Int.Input("mask_blend_pixels", default=64, min=0, max=128, step=1, tooltip="与原始图像混合的过渡像素数"),
+                io.Float.Input("mask_hipass_filter", default=0.1, min=0, max=1, step=0.01, tooltip="忽略低于此值的遮罩像素"),
+                io.Float.Input("context_from_mask_extend_factor", default=1.2, min=1.0, max=100.0, step=0.01, tooltip="从遮罩区域向外扩展上下文的倍数。例如 1.5 表示每个方向额外扩展 50%"),
+                io.Boolean.Input("output_resize_to_target_size", default=True, tooltip="强制缩放到指定分辨率进行采样"),
+                io.Int.Input("output_target_width", default=1024, min=64, max=nodes.MAX_RESOLUTION, step=1, tooltip="输出目标宽度"),
+                io.Int.Input("output_target_height", default=1024, min=64, max=nodes.MAX_RESOLUTION, step=1, tooltip="输出目标高度"),
+                io.Combo.Input("output_padding", options=["0", "8", "16", "32", "64", "128", "256", "512"], default="32", tooltip="将输出尺寸对齐到此值的倍数"),
+                io.Combo.Input("device_mode", options=["cpu", "gpu"], default="gpu", tooltip="计算设备选择"),
+                io.Mask.Input("mask", optional=True, tooltip="内补绘制遮罩，白色为需要重绘的区域"),
+                io.Mask.Input("optional_context_mask", optional=True, tooltip="上下文遮罩，定义额外的保留区域作为上下文参考"),
+            ],
+            outputs=[
+                io.Custom("STITCHER").Output(display_name="stitcher"),
+                io.Image.Output(display_name="cropped_image"),
+                io.Mask.Output(display_name="cropped_mask"),
+            ],
+        )
 
-                "downscale_algorithm": (["nearest", "bilinear", "bicubic", "lanczos", "box", "hamming"], {"default": "bilinear", "tooltip": "缩小时使用的缩放算法"}),
-                "upscale_algorithm": (["nearest", "bilinear", "bicubic", "lanczos", "box", "hamming"], {"default": "bicubic", "tooltip": "放大时使用的缩放算法"}),
-
-                "mask_fill_holes": ("BOOLEAN", {"default": True, "tooltip": "填充遮罩中被完全包围的空洞区域"}),
-                "mask_expand_pixels": ("INT", {"default": 0, "min": 0, "max": nodes.MAX_RESOLUTION, "step": 1, "tooltip": "处理前将遮罩向外扩展的像素数"}),
-                "mask_invert": ("BOOLEAN", {"default": False, "tooltip": "反转遮罩，使遮罩区域变为保留区域"}),
-                "mask_blend_pixels": ("INT", {"default": 64, "min": 0, "max": 128, "step": 1, "tooltip": "与原始图像混合的过渡像素数"}),
-                "mask_hipass_filter": ("FLOAT", {"default": 0.1, "min": 0, "max": 1, "step": 0.01, "tooltip": "忽略低于此值的遮罩像素"}),
-
-                "context_from_mask_extend_factor": ("FLOAT", {"default": 1.2, "min": 1.0, "max": 100.0, "step": 0.01, "tooltip": "从遮罩区域向外扩展上下文的倍数。例如 1.5 表示每个方向额外扩展 50%"}),
-
-                "output_resize_to_target_size": ("BOOLEAN", {"default": True, "tooltip": "强制缩放到指定分辨率进行采样"}),
-                "output_target_width": ("INT", {"default": 1024, "min": 64, "max": nodes.MAX_RESOLUTION, "step": 1, "tooltip": "输出目标宽度"}),
-                "output_target_height": ("INT", {"default": 1024, "min": 64, "max": nodes.MAX_RESOLUTION, "step": 1, "tooltip": "输出目标高度"}),
-                "output_padding": (["0", "8", "16", "32", "64", "128", "256", "512"], {"default": "32", "tooltip": "将输出尺寸对齐到此值的倍数"}),
-
-                "device_mode": (["cpu", "gpu"], {"default": "gpu", "tooltip": "计算设备选择"}),
-           },
-           "optional": {
-                "mask": ("MASK", {"tooltip": "内补绘制遮罩，白色为需要重绘的区域"}),
-                "optional_context_mask": ("MASK", {"tooltip": "上下文遮罩，定义额外的保留区域作为上下文参考"}),
-           }
-        }
-
-    FUNCTION = "inpaint_crop"
-    CATEGORY = "❤️‍🩹炮哥Nodes/图像内补拼接"
-    DESCRIPTION = "根据遮罩裁剪图像用于内补绘制。上下文遮罩用于定义额外的保留区域作为上下文参考。"
-
-    RETURN_TYPES = ("STITCHER", "IMAGE", "MASK")
-    RETURN_NAMES = ("stitcher", "cropped_image", "cropped_mask")
-
-    def inpaint_crop(self, image, downscale_algorithm, upscale_algorithm, mask_fill_holes, mask_expand_pixels, mask_invert, mask_blend_pixels, mask_hipass_filter, context_from_mask_extend_factor, output_resize_to_target_size, output_target_width, output_target_height, output_padding, device_mode, mask=None, optional_context_mask=None):
+    @classmethod
+    def execute(cls, image, downscale_algorithm, upscale_algorithm, mask_fill_holes, mask_expand_pixels, mask_invert, mask_blend_pixels, mask_hipass_filter, context_from_mask_extend_factor, output_resize_to_target_size, output_target_width, output_target_height, output_padding, device_mode, mask=None, optional_context_mask=None):
         image = image.clone()
         if mask is not None:
             mask = mask.clone()
@@ -566,29 +565,26 @@ class InpaintCropImproved:
         result_image = torch.stack(result_image, dim=0)
         result_mask = torch.stack(result_mask, dim=0)
 
-        return (result_stitcher, result_image, result_mask)
+        return io.NodeOutput(result_stitcher, result_image, result_mask)
 
 
-class InpaintStitchImproved:
+class InpaintStitchImproved(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "stitcher": ("STITCHER", {"tooltip": "来自内补裁剪节点的缝合数据"}),
-                "inpainted_image": ("IMAGE", {"tooltip": "内补绘制完成后的图像"}),
-            }
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_InpaintStitchImproved",
+            display_name="内补拼接",
+            category="❤️‍🩹炮哥Nodes/图像内补拼接",
+            description="将内补绘制后的图像缝合回原始图像，不改变未遮罩区域。",
+            inputs=[
+                io.Custom("STITCHER").Input("stitcher", tooltip="来自内补裁剪节点的缝合数据"),
+                io.Image.Input("inpainted_image", tooltip="内补绘制完成后的图像"),
+            ],
+            outputs=[io.Image.Output(display_name="image")],
+        )
 
-    CATEGORY = "❤️‍🩹炮哥Nodes/图像内补拼接"
-    DESCRIPTION = "将内补绘制后的图像缝合回原始图像，不改变未遮罩区域。"
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-
-    FUNCTION = "inpaint_stitch"
-
-
-    def inpaint_stitch(self, stitcher, inpainted_image):
+    @classmethod
+    def execute(cls, stitcher, inpainted_image):
         inpainted_image = inpainted_image.clone()
         results = []
 
@@ -624,15 +620,16 @@ class InpaintStitchImproved:
                 else:
                     one_stitcher[key] = stitcher[key][i]
 
-            one_image, = self.inpaint_stitch_single_image(one_stitcher, one_image, processor)
+            one_image, = cls.inpaint_stitch_single_image(one_stitcher, one_image, processor)
             results.append(one_image.squeeze(0))
 
         result_batch = torch.stack(results, dim=0)
         result_batch = result_batch.cpu()
 
-        return (result_batch,)
+        return io.NodeOutput(result_batch)
 
-    def inpaint_stitch_single_image(self, stitcher, inpainted_image, processor):
+    @staticmethod
+    def inpaint_stitch_single_image(stitcher, inpainted_image, processor):
         downscale_algorithm = stitcher['downscale_algorithm']
         upscale_algorithm = stitcher['upscale_algorithm']
         canvas_image = stitcher['canvas_image']
@@ -652,13 +649,3 @@ class InpaintStitchImproved:
         output_image = processor.stitch_magic_im(canvas_image, inpainted_image, mask, ctc_x, ctc_y, ctc_w, ctc_h, cto_x, cto_y, cto_w, cto_h, downscale_algorithm, upscale_algorithm)
 
         return (output_image,)
-
-NODE_CLASS_MAPPINGS = {
-    "BrotherPao_InpaintCropImproved": InpaintCropImproved,
-    "BrotherPao_InpaintStitchImproved": InpaintStitchImproved
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "BrotherPao_InpaintCropImproved": "内补裁剪",
-    "BrotherPao_InpaintStitchImproved": "内补拼接"
-}

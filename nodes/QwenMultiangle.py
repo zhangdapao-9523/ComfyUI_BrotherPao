@@ -6,12 +6,14 @@ for multi-angle image generation with Qwen-Image-Edit-2511-Multiple-Angles-LoRA
 
 import hashlib
 import base64
-import io
+import io as std_io
 import logging
 from collections import OrderedDict
 
 import numpy as np
 from PIL import Image
+
+from comfy_api.latest import io
 
 logger = logging.getLogger(__name__)
 
@@ -74,55 +76,29 @@ PROMPT_RULES = {
 }
 
 
-class QwenMultiangleCameraNode:
+class QwenMultiangleCameraNode(io.ComfyNode):
     """
     3D Camera Angle Control Node
     Provides a 3D scene to adjust camera angles and outputs a formatted prompt string.
     """
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "horizontal_angle": ("INT", {
-                    "default": 0,
-                    "min": 0,
-                    "max": 360,
-                    "step": 1,
-                    "display": "slider",
-                }),
-                "vertical_angle": ("INT", {
-                    "default": 0,
-                    "min": -30,
-                    "max": 60,
-                    "step": 1,
-                    "display": "slider",
-                }),
-                "zoom": ("FLOAT", {
-                    "default": 5.0,
-                    "min": 0.0,
-                    "max": 10.0,
-                    "step": 0.1,
-                    "display": "slider",
-                }),
-                "camera_view": ("BOOLEAN", {
-                    "default": False,
-                    "display": "checkbox",
-                }),
-            },
-            "optional": {
-                "image": ("IMAGE",),
-            },
-            "hidden": {
-                "unique_id": "UNIQUE_ID",
-            },
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("prompt",)
-    FUNCTION = "generate_prompt"
-    CATEGORY = "❤️‍🩹炮哥Nodes/实用工具"
-    OUTPUT_NODE = True
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_QwenMultiangleCamera",
+            display_name="多角度相机控制",
+            category="❤️‍🩹炮哥Nodes/实用工具",
+            inputs=[
+                io.Int.Input("horizontal_angle", default=0, min=0, max=360, step=1, display_mode=io.NumberDisplay.slider),
+                io.Int.Input("vertical_angle", default=0, min=-30, max=60, step=1, display_mode=io.NumberDisplay.slider),
+                io.Float.Input("zoom", default=5.0, min=0.0, max=10.0, step=0.1, display_mode=io.NumberDisplay.slider),
+                io.Boolean.Input("camera_view", default=False),
+                io.Image.Input("image", optional=True),
+            ],
+            outputs=[io.String.Output(display_name="prompt")],
+            hidden=[io.Hidden.unique_id],
+            is_output_node=True,
+        )
 
     @staticmethod
     def _to_numpy(image):
@@ -151,8 +127,10 @@ class QwenMultiangleCameraNode:
         except Exception:
             return str(hash(str(image)))
 
-    def generate_prompt(self, horizontal_angle, vertical_angle, zoom,
-                        camera_view=False, image=None, unique_id=None):
+    @classmethod
+    def execute(cls, horizontal_angle, vertical_angle, zoom,
+                camera_view=False, image=None):
+        unique_id = getattr(getattr(cls, "hidden", None), "unique_id", None)
         # Validate input ranges
         horizontal_angle = max(0, min(360, int(horizontal_angle)))
         vertical_angle = max(-30, min(60, int(vertical_angle)))
@@ -160,7 +138,7 @@ class QwenMultiangleCameraNode:
 
         # Check cache for unchanged inputs
         cache_key = str(unique_id) if unique_id else "default"
-        image_hash = self._compute_image_hash(image)
+        image_hash = cls._compute_image_hash(image)
         cached = _cache.get(cache_key, {})
         if (cached.get('horizontal_angle') == horizontal_angle
                 and cached.get('vertical_angle') == vertical_angle
@@ -177,7 +155,7 @@ class QwenMultiangleCameraNode:
         image_base64 = ""
         if image is not None:
             try:
-                img_np = self._to_numpy(image)
+                img_np = cls._to_numpy(image)
 
                 img_np = (np.clip(img_np, 0, 1) * 255).astype(np.uint8)
 
@@ -190,7 +168,7 @@ class QwenMultiangleCameraNode:
                         img_np = img_np[..., :3]
 
                 pil_image = Image.fromarray(img_np)
-                buffer = io.BytesIO()
+                buffer = std_io.BytesIO()
                 pil_image.save(buffer, format="PNG")
                 image_base64 = "data:image/png;base64," + base64.b64encode(
                     buffer.getvalue()
@@ -198,10 +176,7 @@ class QwenMultiangleCameraNode:
             except Exception:
                 logger.warning("Failed to convert image to base64", exc_info=True)
 
-        result = {
-            "ui": {"image_base64": [image_base64]},
-            "result": (prompt,),
-        }
+        result = io.NodeOutput(prompt, ui={"image_base64": [image_base64]})
 
         # Cache the result
         _cache[cache_key] = {
@@ -220,8 +195,8 @@ class QwenMultiangleCameraNode:
         return result
 
     @classmethod
-    def IS_CHANGED(cls, horizontal_angle, vertical_angle, zoom,
-                   camera_view=False, image=None, unique_id=None):
+    def fingerprint_inputs(cls, horizontal_angle, vertical_angle, zoom,
+                           camera_view=False, image=None):
         try:
             img_hash = ""
             if image is not None:
@@ -230,12 +205,3 @@ class QwenMultiangleCameraNode:
             return f"{horizontal_angle}_{vertical_angle}_{zoom}_{img_hash}"
         except Exception:
             return f"{horizontal_angle}_{vertical_angle}_{zoom}"
-
-
-NODE_CLASS_MAPPINGS = {
-    "BrotherPao_QwenMultiangleCamera": QwenMultiangleCameraNode,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "BrotherPao_QwenMultiangleCamera": "多角度相机控制",
-}

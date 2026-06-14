@@ -1,54 +1,43 @@
-import logging
+from comfy_api.latest import ComfyExtension, io
 
-from .DictionaryNodes import NODE_CLASS_MAPPINGS as DICT_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as DICT_NODE_DISPLAY_NAME_MAPPINGS
-from .BaiduTranslate import NODE_CLASS_MAPPINGS as BAIDU_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as BAIDU_NODE_DISPLAY_NAME_MAPPINGS
-from .ImageCompare import IMAGE_COMPARE_CLASS_MAPPINGS, IMAGE_COMPARE_DISPLAY_NAME_MAPPINGS
-from .ImageTileNodes import NODE_CLASS_MAPPINGS as TILE_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as TILE_NODE_DISPLAY_NAME_MAPPINGS
-from .ImageColorMatch import NODE_CLASS_MAPPINGS as COLOR_MATCH_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as COLOR_MATCH_NODE_DISPLAY_NAME_MAPPINGS
-from .InpaintCropAndStitch import NODE_CLASS_MAPPINGS as INPAINT_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as INPAINT_NODE_DISPLAY_NAME_MAPPINGS
-from .IsNoInput import NODE_CLASS_MAPPINGS as IS_NO_INPUT_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as IS_NO_INPUT_NODE_DISPLAY_NAME_MAPPINGS
-from .YoloDetect import NODE_CLASS_MAPPINGS as YOLO_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as YOLO_NODE_DISPLAY_NAME_MAPPINGS
-from .QwenMultiangle import NODE_CLASS_MAPPINGS as QWEN_MULTIANGLE_NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS as QWEN_MULTIANGLE_NODE_DISPLAY_NAME_MAPPINGS
+from .BaiduTranslate import BaiduTransDevApi
+from .DictionaryNodes import DictionaryGet, DictionaryNew, DictionaryUpdate
+from .FramesEditor import FramesEditor
+from .ImageColorMatch import ImageColorMatch
+from .ImageCompare import ImageCompareNode
+from .ImageTileNodes import ImageAssemble, ImageResolutionDivider, ImageTileBatch
+from .InpaintCropAndStitch import InpaintCropImproved, InpaintStitchImproved
+from .IsNoInput import IsNoInput
+from .QwenMultiangle import QwenMultiangleCameraNode
+from .YoloDetect import YoloDetect
 
-logger = logging.getLogger(__name__)
 
-_CLASS_MAPPING_LIST = [
-    BAIDU_NODE_CLASS_MAPPINGS,
-    DICT_NODE_CLASS_MAPPINGS,
-    IMAGE_COMPARE_CLASS_MAPPINGS,
-    TILE_NODE_CLASS_MAPPINGS,
-    COLOR_MATCH_NODE_CLASS_MAPPINGS,
-    INPAINT_NODE_CLASS_MAPPINGS,
-    IS_NO_INPUT_NODE_CLASS_MAPPINGS,
-    YOLO_NODE_CLASS_MAPPINGS,
-    QWEN_MULTIANGLE_NODE_CLASS_MAPPINGS,
-]
-
-_DISPLAY_MAPPING_LIST = [
-    BAIDU_NODE_DISPLAY_NAME_MAPPINGS,
-    DICT_NODE_DISPLAY_NAME_MAPPINGS,
-    IMAGE_COMPARE_DISPLAY_NAME_MAPPINGS,
-    TILE_NODE_DISPLAY_NAME_MAPPINGS,
-    COLOR_MATCH_NODE_DISPLAY_NAME_MAPPINGS,
-    INPAINT_NODE_DISPLAY_NAME_MAPPINGS,
-    IS_NO_INPUT_NODE_DISPLAY_NAME_MAPPINGS,
-    YOLO_NODE_DISPLAY_NAME_MAPPINGS,
-    QWEN_MULTIANGLE_NODE_DISPLAY_NAME_MAPPINGS,
+BROTHERPAO_NODE_CLASSES: list[type[io.ComfyNode]] = [
+    BaiduTransDevApi,
+    DictionaryUpdate,
+    DictionaryGet,
+    DictionaryNew,
+    FramesEditor,
+    ImageCompareNode,
+    ImageTileBatch,
+    ImageResolutionDivider,
+    ImageAssemble,
+    ImageColorMatch,
+    InpaintCropImproved,
+    InpaintStitchImproved,
+    IsNoInput,
+    YoloDetect,
+    QwenMultiangleCameraNode,
 ]
 
 
-def _merge_mappings(mapping_list, name):
-    result = {}
-    for mapping in mapping_list:
-        overlap = set(mapping.keys()) & set(result.keys())
-        if overlap:
-            logger.warning("[BrotherPao] %s 注册名冲突: %s", name, overlap)
-        result.update(mapping)
-    return result
+class BrotherPaoExtension(ComfyExtension):
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return BROTHERPAO_NODE_CLASSES
 
 
-NODE_CLASS_MAPPINGS = _merge_mappings(_CLASS_MAPPING_LIST, "NODE_CLASS_MAPPINGS")
+async def comfy_entrypoint() -> BrotherPaoExtension:
+    return BrotherPaoExtension()
 
-NODE_DISPLAY_NAME_MAPPINGS = _merge_mappings(_DISPLAY_MAPPING_LIST, "NODE_DISPLAY_NAME_MAPPINGS")
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+__all__ = ["BROTHERPAO_NODE_CLASSES", "BrotherPaoExtension", "comfy_entrypoint"]

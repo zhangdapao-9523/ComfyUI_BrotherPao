@@ -1,27 +1,28 @@
 MAX_DICT_COUNT = 10
 MAX_KV_PAIRS = 5
 
+from comfy_api.latest import io
 
-class DictionaryUpdate:
+
+class DictionaryUpdate(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        base = {
-            "required": {
-                "dict1": ("DICT", {"lazy": True}),
-                "dict2": ("DICT", {"lazy": True}),
-            },
-            "optional": {},
-        }
+    def define_schema(cls):
+        inputs = [
+            io.Custom("DICT").Input("dict1", lazy=True),
+            io.Custom("DICT").Input("dict2", lazy=True),
+        ]
         for i in range(3, MAX_DICT_COUNT + 1):
-            base["optional"][f"dict{i}"] = ("DICT", {"lazy": True})
-        return base
+            inputs.append(io.Custom("DICT").Input(f"dict{i}", optional=True, lazy=True))
+        return io.Schema(
+            node_id="BrotherPao_DictionaryUpdate",
+            display_name="字典合并",
+            category="❤️‍🩹炮哥Nodes/字典操作",
+            inputs=inputs,
+            outputs=[io.Custom("DICT").Output(display_name="merged_dict")],
+        )
 
-    RETURN_TYPES = ("DICT",)
-    RETURN_NAMES = ("merged_dict",)
-    FUNCTION = "dictionary_update"
-    CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
-
-    def check_lazy_status(self, **kwargs):
+    @classmethod
+    def check_lazy_status(cls, **kwargs):
         needed = []
         for i in range(1, MAX_DICT_COUNT + 1):
             key = f"dict{i}"
@@ -29,61 +30,59 @@ class DictionaryUpdate:
                 needed.append(key)
         return needed
 
-    def dictionary_update(self, **kwargs):
+    @classmethod
+    def execute(cls, **kwargs):
         merged = {}
         for i in range(1, MAX_DICT_COUNT + 1):
             key = f"dict{i}"
             value = kwargs.get(key)
             if value is not None and isinstance(value, dict):
                 merged.update(value)
-        return (merged,)
+        return io.NodeOutput(merged)
 
 
-class DictionaryGet:
+class DictionaryGet(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "dict": ("DICT",),
-                "key": ("STRING", {"default": "", "multiline": False}),
-            },
-            "optional": {
-                "default_value": ("STRING", {"default": "", "multiline": False}),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_DictionaryGet",
+            display_name="字典取值",
+            category="❤️‍🩹炮哥Nodes/字典操作",
+            inputs=[
+                io.Custom("DICT").Input("dict"),
+                io.String.Input("key", default="", multiline=False),
+                io.String.Input("default_value", optional=True, default="", multiline=False),
+            ],
+            outputs=[io.String.Output(display_name="value")],
+        )
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("value",)
-    FUNCTION = "dictionary_get"
-    CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
-
-    def dictionary_get(self, dict, key, default_value=""):
-        if not hasattr(dict, 'get'):
-            return (str(default_value),)
-        return (str(dict.get(key, default_value)),)
-
-
-class DictionaryNew:
     @classmethod
-    def INPUT_TYPES(cls):
-        base = {
-            "required": {
-                "key1": ("STRING", {"default": "", "multiline": False}),
-                "value1": ("STRING", {"default": "", "multiline": True}),
-            },
-            "optional": {},
-        }
+    def execute(cls, dict, key, default_value=""):
+        if not hasattr(dict, "get"):
+            return io.NodeOutput(str(default_value))
+        return io.NodeOutput(str(dict.get(key, default_value)))
+
+
+class DictionaryNew(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        inputs = [
+            io.String.Input("key1", default="", multiline=False),
+            io.String.Input("value1", default="", multiline=True),
+        ]
         for i in range(2, MAX_KV_PAIRS + 1):
-            base["optional"][f"key{i}"] = ("STRING", {"default": "", "multiline": False})
-            base["optional"][f"value{i}"] = ("STRING", {"default": "", "multiline": True})
-        return base
+            inputs.append(io.String.Input(f"key{i}", optional=True, default="", multiline=False))
+            inputs.append(io.String.Input(f"value{i}", optional=True, default="", multiline=True))
+        return io.Schema(
+            node_id="BrotherPao_DictionaryNew",
+            display_name="新建字典",
+            category="❤️‍🩹炮哥Nodes/字典操作",
+            inputs=inputs,
+            outputs=[io.Custom("DICT").Output(display_name="dict")],
+        )
 
-    RETURN_TYPES = ("DICT",)
-    RETURN_NAMES = ("dict",)
-    FUNCTION = "dictionary_new"
-    CATEGORY = "❤️‍🩹炮哥Nodes/字典操作"
-
-    def dictionary_new(self, key1="", value1="", **kwargs):
+    @classmethod
+    def execute(cls, key1="", value1="", **kwargs):
         result = {}
         if key1:
             result[key1] = value1
@@ -92,17 +91,4 @@ class DictionaryNew:
             v = kwargs.get(f"value{i}", "")
             if k:
                 result[k] = v
-        return (result,)
-
-
-NODE_CLASS_MAPPINGS = {
-    'BrotherPao_DictionaryUpdate': DictionaryUpdate,
-    'BrotherPao_DictionaryGet': DictionaryGet,
-    'BrotherPao_DictionaryNew': DictionaryNew,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    'BrotherPao_DictionaryUpdate': '字典合并',
-    'BrotherPao_DictionaryGet': '字典取值',
-    'BrotherPao_DictionaryNew': '新建字典',
-}
+        return io.NodeOutput(result)

@@ -3,6 +3,9 @@ import torch
 from torch import Tensor
 from torch.nn import functional as F
 from torchvision.transforms import ToTensor, ToPILImage
+
+from comfy_api.latest import io
+
 from .utils import pil2tensor, tensor2pil
 
 
@@ -79,29 +82,32 @@ def wavelet_color_fix(target: Image, source: Image):
     return _norm_tensor_to_pil(result_tensor)
 
 
-class ImageColorMatch:
+class ImageColorMatch(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "reference_image": ("IMAGE", {"tooltip": "颜色/风格的参考图像。"}),
-                "target_image": ("IMAGE", {"tooltip": "需要调整颜色的目标图像，会被调整以匹配参考图像的色调。"}),
-                "method": (["wavelet", "adain", "mkl", "hm", "reinhard", "mvgd", "hm-mvgd-hm", "hm-mkl-hm"],),
-            }
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_ImageColorMatch",
+            display_name="图像颜色匹配",
+            category="❤️‍🩹炮哥Nodes/图像操作",
+            description="将目标图像的色调/风格匹配到参考图像。支持 wavelet/adain 等传统方法及 color-matcher 库方法。",
+            inputs=[
+                io.Image.Input("reference_image", tooltip="颜色/风格的参考图像。"),
+                io.Image.Input("target_image", tooltip="需要调整颜色的目标图像，会被调整以匹配参考图像的色调。"),
+                io.Combo.Input(
+                    "method",
+                    options=["wavelet", "adain", "mkl", "hm", "reinhard", "mvgd", "hm-mvgd-hm", "hm-mkl-hm"],
+                ),
+            ],
+            outputs=[io.Image.Output(display_name="image")],
+        )
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-    FUNCTION = "color_match"
-    CATEGORY = "❤️‍🩹炮哥Nodes/图像操作"
-    DESCRIPTION = "将目标图像的色调/风格匹配到参考图像。支持 wavelet/adain 等传统方法及 color-matcher 库方法。"
-
-    def color_match(self, reference_image, target_image, method):
+    @classmethod
+    def execute(cls, reference_image, target_image, method):
         if method in ["wavelet", "adain"]:
             target_pil = tensor2pil(target_image)
             ref_pil = tensor2pil(reference_image)
             result = wavelet_color_fix(target_pil, ref_pil) if method == 'wavelet' else adain_color_fix(target_pil, ref_pil)
-            return (pil2tensor(result),)
+            return io.NodeOutput(pil2tensor(result))
 
         try:
             from color_matcher import ColorMatcher
@@ -130,13 +136,4 @@ class ImageColorMatch:
             out.append(torch.from_numpy(image_result))
 
         result = torch.stack(out, dim=0).to(torch.float32)
-        return (result,)
-
-
-NODE_CLASS_MAPPINGS = {
-    'BrotherPao_ImageColorMatch': ImageColorMatch,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    'BrotherPao_ImageColorMatch': '图像颜色匹配',
-}
+        return io.NodeOutput(result)

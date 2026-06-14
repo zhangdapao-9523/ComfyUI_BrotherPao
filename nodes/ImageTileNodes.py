@@ -2,6 +2,9 @@ import math
 import numpy as np
 import torch
 from PIL import Image
+
+from comfy_api.latest import io
+
 from .utils import pil2tensor, tensor2pil
 
 
@@ -26,34 +29,27 @@ def unpack_tile_info(tile_info):
 IMAGE_TILE_NODE_DESC = """将图像按行列分块数裁剪为带重叠的图像批次。自动计算分块尺寸并对齐到 8 的倍数。拼接节点会根据实际分块尺寸自动适配缩放。"""
 
 
-class ImageTileBatch:
+class ImageTileBatch(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE", {
-                    "tooltip": "输入图像。"
-                }),
-                "horizontal_tiles": ("INT", {
-                    "default": 3, "min": 1, "max": 10, "step": 1,
-                    "tooltip": "水平分块列数，值越大分块越窄。"
-                }),
-                "vertical_tiles": ("INT", {
-                    "default": 3, "min": 1, "max": 10, "step": 1,
-                    "tooltip": "垂直分块行数，值越大分块越矮。"
-                }),
-                "overlap_rate": ("FLOAT", {
-                    "default": 0.1, "min": 0.00, "max": 0.95, "step": 0.05,
-                    "tooltip": "相邻分块的重叠比例。0=无重叠；0.1=约10%重叠。越大接缝越不明显，推荐 0.05~0.2。"
-                }),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE", "TILE_INFO", "INT", "INT")
-    RETURN_NAMES = ("tile_batch", "tile_info", "tile_width", "tile_height")
-    FUNCTION = "tile_image"
-    CATEGORY = "❤️‍🩹炮哥Nodes/图像分块拼接"
-    DESCRIPTION = IMAGE_TILE_NODE_DESC
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_ImageTileBatch",
+            display_name="图像分块_按数量",
+            category="❤️‍🩹炮哥Nodes/图像分块拼接",
+            description=IMAGE_TILE_NODE_DESC,
+            inputs=[
+                io.Image.Input("image", tooltip="输入图像。"),
+                io.Int.Input("horizontal_tiles", default=3, min=1, max=10, step=1, tooltip="水平分块列数，值越大分块越窄。"),
+                io.Int.Input("vertical_tiles", default=3, min=1, max=10, step=1, tooltip="垂直分块行数，值越大分块越矮。"),
+                io.Float.Input("overlap_rate", default=0.1, min=0.00, max=0.95, step=0.05, tooltip="相邻分块的重叠比例。0=无重叠；0.1=约10%重叠。越大接缝越不明显，推荐 0.05~0.2。"),
+            ],
+            outputs=[
+                io.Image.Output(display_name="tile_batch"),
+                io.Custom("TILE_INFO").Output(display_name="tile_info"),
+                io.Int.Output(display_name="tile_width"),
+                io.Int.Output(display_name="tile_height"),
+            ],
+        )
 
     @staticmethod
     def _calc_axis_tile_size(raw_size, factor, overlap_rate):
@@ -69,12 +65,14 @@ class ImageTileBatch:
                 tile = (tile // 8) * 8
         return tile
 
-    def _calculate_tile_size(self, raw_W, raw_H, width_factor, height_factor, overlap_rate):
-        tile_width = self._calc_axis_tile_size(raw_W, width_factor, overlap_rate)
-        tile_height = self._calc_axis_tile_size(raw_H, height_factor, overlap_rate)
+    @classmethod
+    def _calculate_tile_size(cls, raw_W, raw_H, width_factor, height_factor, overlap_rate):
+        tile_width = cls._calc_axis_tile_size(raw_W, width_factor, overlap_rate)
+        tile_height = cls._calc_axis_tile_size(raw_H, height_factor, overlap_rate)
         return tile_width, tile_height
 
-    def _calculate_step(self, size, tile_size):
+    @staticmethod
+    def _calculate_step(size, tile_size):
         if size <= tile_size:
             return 1, 0
         num_tiles = (size + tile_size - 1) // tile_size
@@ -82,18 +80,19 @@ class ImageTileBatch:
         step = tile_size - overlap
         return num_tiles, step
 
-    def tile_image(self, image, horizontal_tiles, vertical_tiles, overlap_rate):
+    @classmethod
+    def execute(cls, image, horizontal_tiles, vertical_tiles, overlap_rate):
         _, raw_H, raw_W, _ = image.shape
 
-        tile_width, tile_height = self._calculate_tile_size(
+        tile_width, tile_height = cls._calculate_tile_size(
             raw_W, raw_H, horizontal_tiles, vertical_tiles, overlap_rate
         )
 
         image_pil = tensor2pil(image.squeeze(0))
         img_width, img_height = image_pil.size
 
-        num_cols, step_x = self._calculate_step(img_width, tile_width)
-        num_rows, step_y = self._calculate_step(img_height, tile_height)
+        num_cols, step_x = cls._calculate_step(img_width, tile_width)
+        num_rows, step_y = cls._calculate_step(img_height, tile_height)
 
         tiles = []
         positions = []
@@ -114,37 +113,30 @@ class ImageTileBatch:
 
         tiles = torch.stack(tiles, dim=0).squeeze(1)
         tile_info = make_tile_info(positions, (img_width, img_height), (num_cols, num_rows), (tile_width, tile_height))
-        return (tiles, tile_info, tile_width, tile_height)
+        return io.NodeOutput(tiles, tile_info, tile_width, tile_height)
 
 
 IMAGE_ASSEMBLE_DESC = """将分块图像拼接回完整图像。自动对比原始分块尺寸与实际分块尺寸推导缩放倍率，支持渐变融合消除接缝。"""
 
 
-class ImageAssemble:
+class ImageAssemble(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "tile_batch": ("IMAGE", {
-                    "tooltip": "分块图像批次，来自「图像分块 批处理」。"
-                }),
-                "tile_info": ("TILE_INFO", {
-                    "tooltip": "分块信息结构体，来自「图像分块 批处理」。节点自动根据实际分块尺寸推导缩放倍率。"
-                }),
-                "blend_width": ("INT", {
-                    "default": 64, "min": 0,
-                    "tooltip": "渐变融合的像素宽度。0=不融合直接拼接；值越大过渡越平滑。会根据缩放倍率等比调整，推荐 32~128。"
-                }),
-            }
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_ImageAssemble",
+            display_name="图像分块_拼接",
+            category="❤️‍🩹炮哥Nodes/图像分块拼接",
+            description=IMAGE_ASSEMBLE_DESC,
+            inputs=[
+                io.Image.Input("tile_batch", tooltip="分块图像批次，来自「图像分块 批处理」。"),
+                io.Custom("TILE_INFO").Input("tile_info", tooltip="分块信息结构体，来自「图像分块 批处理」。节点自动根据实际分块尺寸推导缩放倍率。"),
+                io.Int.Input("blend_width", default=64, min=0, tooltip="渐变融合的像素宽度。0=不融合直接拼接；值越大过渡越平滑。会根据缩放倍率等比调整，推荐 32~128。"),
+            ],
+            outputs=[io.Image.Output(display_name="assembled_image")],
+        )
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("assembled_image",)
-    FUNCTION = "assemble_image"
-    CATEGORY = "❤️‍🩹炮哥Nodes/图像分块拼接"
-    DESCRIPTION = IMAGE_ASSEMBLE_DESC
-
-    def _create_gradient_mask(self, size, direction):
+    @staticmethod
+    def _create_gradient_mask(size, direction):
         w, h = size
         if direction == 'horizontal':
             arr = np.linspace(255, 0, w, dtype=np.uint8).reshape(1, -1)
@@ -154,7 +146,8 @@ class ImageAssemble:
             arr = np.tile(arr, (1, w))
         return Image.fromarray(arr, mode='L')
 
-    def _blend_tiles(self, tile1, tile2, overlap_size, direction, padding):
+    @classmethod
+    def _blend_tiles(cls, tile1, tile2, overlap_size, direction, padding):
         blend_size = min(padding, overlap_size)
         is_h = direction == 'horizontal'
 
@@ -182,7 +175,7 @@ class ImageAssemble:
         offset_after = offset_total - offset_before
 
         mask_size = (blend_size, result_cross) if is_h else (result_cross, blend_size)
-        mask = self._create_gradient_mask(mask_size, direction)
+        mask = cls._create_gradient_mask(mask_size, direction)
 
         if is_h:
             crop1 = tile1.crop((main1 - overlap_size + offset_before, 0, main1 - offset_after, cross1))
@@ -207,7 +200,8 @@ class ImageAssemble:
             result.paste(tile2.crop((0, offset_before + blend_size, cross2, main2)), (0, main1 - offset_after))
         return result
 
-    def assemble_image(self, tile_batch, tile_info, blend_width):
+    @classmethod
+    def execute(cls, tile_batch, tile_info, blend_width):
         tile_positions, original_size, grid_size, original_tile_size = unpack_tile_info(tile_info)
         num_cols, num_rows = grid_size
 
@@ -243,7 +237,7 @@ class ImageAssemble:
                 left = scaled_positions[index][0]
                 overlap_width = prev_right - left
                 if overlap_width > 0:
-                    row_image = self._blend_tiles(row_image, tile_image, overlap_width, 'horizontal', scaled_blend_width)
+                    row_image = cls._blend_tiles(row_image, tile_image, overlap_width, 'horizontal', scaled_blend_width)
                 else:
                     new_width = row_image.width + tile_image.width
                     new_height = max(row_image.height, tile_image.height)
@@ -259,7 +253,7 @@ class ImageAssemble:
             upper = scaled_positions[row * num_cols][1]
             overlap_height = prev_lower - upper
             if overlap_height > 0:
-                final_image = self._blend_tiles(final_image, row_images[row], overlap_height, 'vertical', scaled_blend_width)
+                final_image = cls._blend_tiles(final_image, row_images[row], overlap_height, 'vertical', scaled_blend_width)
             else:
                 new_width = max(final_image.width, row_images[row].width)
                 new_height = final_image.height + row_images[row].height
@@ -268,7 +262,7 @@ class ImageAssemble:
                 new_final_image.paste(row_images[row], (0, final_image.height))
                 final_image = new_final_image
 
-        return pil2tensor(final_image).unsqueeze(0)
+        return io.NodeOutput(pil2tensor(final_image))
 
 
 OVERLAP_PRESETS = {
@@ -286,36 +280,29 @@ RESOLUTION_DIVIDER_DESC = """根据分块尺寸自动计算网格数，将图像
 3. 按网格裁剪所有分块，输出批次和分块信息。"""
 
 
-class ImageResolutionDivider:
+class ImageResolutionDivider(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE", {
-                    "tooltip": "输入图像。"
-                }),
-                "tile_width": ("INT", {
-                    "default": 1024, "min": 64, "max": 16384, "step": 64,
-                    "tooltip": "每个分块的宽度（像素）。"
-                }),
-                "tile_height": ("INT", {
-                    "default": 1024, "min": 64, "max": 16384, "step": 64,
-                    "tooltip": "每个分块的高度（像素）。"
-                }),
-                "overlap_preset": (list(OVERLAP_PRESETS.keys()), {
-                    "default": "1/4 tile",
-                    "tooltip": "相邻分块的重叠比例预设。分块越多重叠越大，拼接越平滑。"
-                }),
-            }
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_ImageResolutionDivider",
+            display_name="图像分块_按分辨率",
+            category="❤️‍🩹炮哥Nodes/图像分块拼接",
+            description=RESOLUTION_DIVIDER_DESC,
+            inputs=[
+                io.Image.Input("image", tooltip="输入图像。"),
+                io.Int.Input("tile_width", default=1024, min=64, max=16384, step=64, tooltip="每个分块的宽度（像素）。"),
+                io.Int.Input("tile_height", default=1024, min=64, max=16384, step=64, tooltip="每个分块的高度（像素）。"),
+                io.Combo.Input("overlap_preset", options=list(OVERLAP_PRESETS.keys()), default="1/4 tile", tooltip="相邻分块的重叠比例预设。分块越多重叠越大，拼接越平滑。"),
+            ],
+            outputs=[
+                io.Image.Output(display_name="tile_batch"),
+                io.Custom("TILE_INFO").Output(display_name="tile_info"),
+                io.String.Output(display_name="info_preview"),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "TILE_INFO", "STRING")
-    RETURN_NAMES = ("tile_batch", "tile_info", "info_preview")
-    FUNCTION = "execute"
-    CATEGORY = "❤️‍🩹炮哥Nodes/图像分块拼接"
-    DESCRIPTION = RESOLUTION_DIVIDER_DESC
-
-    def execute(self, image, tile_width, tile_height, overlap_preset):
+    @classmethod
+    def execute(cls, image, tile_width, tile_height, overlap_preset):
         overlap_fraction = OVERLAP_PRESETS.get(overlap_preset, 0.03125)
 
         _, height, width, _ = image.shape
@@ -371,17 +358,4 @@ class ImageResolutionDivider:
             f"重叠 Y: {actual_overlap_y} 像素"
         )
 
-        return (tile_batch, tile_info_obj, info_text)
-
-
-NODE_CLASS_MAPPINGS = {
-    'BrotherPao_ImageTileBatch': ImageTileBatch,
-    'BrotherPao_ImageResolutionDivider': ImageResolutionDivider,
-    'BrotherPao_ImageAssemble': ImageAssemble,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    'BrotherPao_ImageTileBatch': '图像分块_按数量',
-    'BrotherPao_ImageResolutionDivider': '图像分块_按分辨率',
-    'BrotherPao_ImageAssemble': '图像分块_拼接',
-}
+        return io.NodeOutput(tile_batch, tile_info_obj, info_text)

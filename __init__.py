@@ -3,14 +3,13 @@ import importlib
 WEB_DIRECTORY = "web"
 
 try:
-    from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+    from .nodes import comfy_entrypoint
 except ImportError:
-    NODE_CLASS_MAPPINGS = {}
-    NODE_DISPLAY_NAME_MAPPINGS = {}
+    comfy_entrypoint = None
 
 try:
     importlib.import_module('.routes', __name__)
 except ImportError:
     pass
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
+__all__ = ["WEB_DIRECTORY", "comfy_entrypoint"]

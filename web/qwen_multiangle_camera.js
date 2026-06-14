@@ -409,6 +409,8 @@ class CameraWidget {
 
     _bindEvents() {
         const canvas = this.renderer.domElement;
+        this._boundWheel = (e) => this._onWheel(e);
+        this._boundWindowWheel = (e) => this._onWindowWheel(e);
         canvas.addEventListener("mousedown", (e) => this._onPointerDown(e));
         canvas.addEventListener("mousemove", (e) => this._onPointerMove(e));
         canvas.addEventListener("mouseup", () => this._onPointerUp());
@@ -422,7 +424,9 @@ class CameraWidget {
             this._onPointerMove({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
         }, { passive: false });
         canvas.addEventListener("touchend", () => this._onPointerUp());
-        canvas.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
+        window.addEventListener("wheel", this._boundWindowWheel, { passive: false, capture: true });
+        this.container.addEventListener("wheel", this._boundWheel, { passive: false, capture: true });
+        canvas.addEventListener("wheel", this._boundWheel, { passive: false });
 
         this._resizeObserver = new ResizeObserver(() => this._onResize());
         this._resizeObserver.observe(this.container);
@@ -576,13 +580,31 @@ class CameraWidget {
     }
 
     _onWheel(event) {
+        const isCanvasTarget = event.target === this.renderer.domElement;
+        if (!this.useCameraView && !isCanvasTarget) return;
+
         event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
         if (!this.useCameraView) return;
         const delta = event.deltaY > 0 ? -0.5 : 0.5;
         this.liveDistance = Math.max(0, Math.min(10, this.liveDistance + delta));
         this.distance = Math.round(this.liveDistance * 10) / 10;
         this._updateVisuals();
         this._notifyStateChange();
+    }
+
+    _onWindowWheel(event) {
+        if (!this.useCameraView || !this._eventInsideContainer(event)) return;
+        this._onWheel(event);
+    }
+
+    _eventInsideContainer(event) {
+        const rect = this.container.getBoundingClientRect();
+        return event.clientX >= rect.left
+            && event.clientX <= rect.right
+            && event.clientY >= rect.top
+            && event.clientY <= rect.bottom;
     }
 
     _onResize() {
@@ -675,6 +697,11 @@ class CameraWidget {
     dispose() {
         this.disposed = true;
         if (this.animationId !== null) cancelAnimationFrame(this.animationId);
+        if (this._boundWheel) {
+            window.removeEventListener("wheel", this._boundWindowWheel, { capture: true });
+            this.container.removeEventListener("wheel", this._boundWheel, { capture: true });
+            this.renderer.domElement.removeEventListener("wheel", this._boundWheel);
+        }
         this._resizeObserver?.disconnect();
         this.renderer.dispose();
         if (this.container.contains(this.renderer.domElement)) {

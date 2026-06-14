@@ -7,6 +7,8 @@ import torch
 from PIL import Image, ImageDraw
 
 import folder_paths
+from comfy_api.latest import io
+
 from .utils import pil2tensor, tensor2pil
 
 logger = logging.getLogger(__name__)
@@ -44,12 +46,7 @@ COCO80_TOOLTIP = (
 )
 
 
-class YoloDetect:
-    CATEGORY = "❤️‍🩹炮哥Nodes/实用工具"
-    RETURN_TYPES = ("IMAGE", "BBOXES", "MASK", "MASK", "MASK", "MASK")
-    RETURN_NAMES = ("annotated_image", "bboxes", "bbox_mask", "segs_mask", "bbox_mask_list", "segs_mask_list")
-    FUNCTION = "run_detection"
-
+class YoloDetect(io.ComfyNode):
     _MODEL_CACHE: Dict[str, object] = {}
     _HAS_SEG_CACHE: Dict[str, bool] = {}
 
@@ -59,30 +56,39 @@ class YoloDetect:
         return sorted(f for f in files if f.lower().endswith(".pt"))
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def define_schema(cls):
         models = cls._scan_models()
         if not models:
             models = [f"将 .pt 模型文件放入 {YOLO_MODELS_DIR}"]
         default_model = models[0]
 
-        return {
-            "required": {
-                "images": ("IMAGE", {"tooltip": "输入图像"}),
-                "yolo_model": (tuple(models), {"default": default_model, "tooltip": f"YOLOv8 权重文件，存放于 {YOLO_MODELS_DIR}"}),
-                "mask_count": (MASK_COUNT_CHOICES, {"default": "all", "tooltip": "合并前 N 个检出的掩码。'all' 为合并全部检出"}),
-            },
-            "optional": {
-                "select_index": (MASK_INDEX_CHOICES, {"default": "none", "tooltip": "从第几个检出开始选取（1-based）。'none' 从第一个开始，影响所有边界框和遮罩输出"}),
-                "conf": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "置信度阈值"}),
-                "iou": ("FLOAT", {"default": 0.45, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "NMS 的 IOU 阈值"}),
-                "classes": ("STRING", {"default": "", "placeholder": "例: 0,2,5-7", "tooltip": COCO80_TOOLTIP}),
-                "device": (DEVICE_CHOICES, {"default": "auto", "tooltip": "推理设备，auto 自动检测 CUDA → MPS → CPU"}),
-                "max_det": ("INT", {"default": 300, "min": 1, "max": 1000, "step": 1, "tooltip": "每张图像最大检出数"}),
-                "retina_masks": ("BOOLEAN", {"default": True, "tooltip": "使用高分辨率掩码"}),
-                "agnostic_nms": ("BOOLEAN", {"default": False, "tooltip": "启用类别无关 NMS"}),
-                "verbose": ("BOOLEAN", {"default": False, "tooltip": "推理过程中输出详细信息"}),
-            },
-        }
+        return io.Schema(
+            node_id="BrotherPao_YoloDetect",
+            display_name="YOLO-V8目标检测",
+            category="❤️‍🩹炮哥Nodes/实用工具",
+            inputs=[
+                io.Image.Input("images", tooltip="输入图像"),
+                io.Combo.Input("yolo_model", options=list(models), default=default_model, tooltip=f"YOLOv8 权重文件，存放于 {YOLO_MODELS_DIR}"),
+                io.Combo.Input("mask_count", options=list(MASK_COUNT_CHOICES), default="all", tooltip="合并前 N 个检出的掩码。'all' 为合并全部检出"),
+                io.Combo.Input("select_index", optional=True, options=list(MASK_INDEX_CHOICES), default="none", tooltip="从第几个检出开始选取（1-based）。'none' 从第一个开始，影响所有边界框和遮罩输出"),
+                io.Float.Input("conf", optional=True, default=0.25, min=0.0, max=1.0, step=0.01, tooltip="置信度阈值"),
+                io.Float.Input("iou", optional=True, default=0.45, min=0.0, max=1.0, step=0.01, tooltip="NMS 的 IOU 阈值"),
+                io.String.Input("classes", optional=True, default="", placeholder="例: 0,2,5-7", tooltip=COCO80_TOOLTIP),
+                io.Combo.Input("device", optional=True, options=list(DEVICE_CHOICES), default="auto", tooltip="推理设备，auto 自动检测 CUDA → MPS → CPU"),
+                io.Int.Input("max_det", optional=True, default=300, min=1, max=1000, step=1, tooltip="每张图像最大检出数"),
+                io.Boolean.Input("retina_masks", optional=True, default=True, tooltip="使用高分辨率掩码"),
+                io.Boolean.Input("agnostic_nms", optional=True, default=False, tooltip="启用类别无关 NMS"),
+                io.Boolean.Input("verbose", optional=True, default=False, tooltip="推理过程中输出详细信息"),
+            ],
+            outputs=[
+                io.Image.Output(display_name="annotated_image"),
+                io.Custom("BBOXES").Output(display_name="bboxes"),
+                io.Mask.Output(display_name="bbox_mask"),
+                io.Mask.Output(display_name="segs_mask"),
+                io.Mask.Output(display_name="bbox_mask_list"),
+                io.Mask.Output(display_name="segs_mask_list"),
+            ],
+        )
 
     def _pick_device(self, requested: str) -> str:
         if requested != "auto":
@@ -207,8 +213,9 @@ class YoloDetect:
             merged = torch.maximum(merged, mask)
         return merged
 
-    def run_detection(
-        self,
+    @classmethod
+    def execute(
+        cls,
         images,
         yolo_model,
         mask_count="all",
@@ -222,6 +229,7 @@ class YoloDetect:
         select_index="none",
         verbose=False,
     ):
+        self = cls()
         model_path = self._find_model_path(yolo_model)
         model = self._load_model(model_path)
         device_target = self._pick_device(device)
@@ -331,13 +339,4 @@ class YoloDetect:
         bbox_list_tensor = torch.stack(bbox_mask_list, dim=0)
         segs_list_tensor = torch.stack(segs_mask_list, dim=0)
 
-        return annotated_tensor, bboxes_batch, bbox_tensor, segs_tensor, bbox_list_tensor, segs_list_tensor
-
-
-NODE_CLASS_MAPPINGS = {
-    "BrotherPao_YoloDetect": YoloDetect,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "BrotherPao_YoloDetect": "YOLO-V8目标检测",
-}
+        return io.NodeOutput(annotated_tensor, bboxes_batch, bbox_tensor, segs_tensor, bbox_list_tensor, segs_list_tensor)

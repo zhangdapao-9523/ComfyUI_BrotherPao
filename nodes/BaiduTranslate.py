@@ -2,6 +2,8 @@ import hashlib
 import random
 import requests
 
+from comfy_api.latest import io
+
 from ..config_manager import get_baidu_credentials
 
 API_ENDPOINT = 'https://api.fanyi.baidu.com'
@@ -10,37 +12,39 @@ REQUEST_TIMEOUT = 15
 MAX_TEXT_LENGTH = 6000
 
 
-class BaiduTransDevApi:
+class BaiduTransDevApi(io.ComfyNode):
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            'required': {
-                'text': ('STRING', {
-                    'multiline': True,
-                    'forceInput': False,
-                    'default': '',
-                    'placeholder': '请输入要翻译的文本'
-                }),
-                'translate_to': (['zh', 'en'], {'default': 'zh'}),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="BrotherPao_BaiduTrans",
+            display_name="百度翻译(API)",
+            category="❤️‍🩹炮哥Nodes/百度翻译",
+            inputs=[
+                io.String.Input(
+                    "text",
+                    multiline=True,
+                    force_input=False,
+                    default="",
+                    placeholder="请输入要翻译的文本",
+                ),
+                io.Combo.Input("translate_to", options=["zh", "en"], default="zh"),
+            ],
+            outputs=[io.String.Output()],
+        )
 
-    RETURN_TYPES = ('STRING',)
-    FUNCTION = 'translation_devapi'
-    CATEGORY = '❤️‍🩹炮哥Nodes/百度翻译'
-
-    def translation_devapi(self, text, translate_to='zh'):
+    @classmethod
+    def execute(cls, text, translate_to='zh'):
 
         if not text or not text.strip():
-            return ("",)
+            return io.NodeOutput("")
 
         text = text.strip()
         if len(text) > MAX_TEXT_LENGTH:
-            return (f"文本过长，最大支持 {MAX_TEXT_LENGTH} 字符，当前 {len(text)} 字符",)
+            return io.NodeOutput(f"文本过长，最大支持 {MAX_TEXT_LENGTH} 字符，当前 {len(text)} 字符")
 
         appid, appkey = get_baidu_credentials()
         if not appid or not appkey:
-            return ("[错误]配置文件不存在或缺少 appid/appkey，请在 config.json 中配置 baidu_translate.appid 和 baidu_translate.appkey",)
+            return io.NodeOutput("[错误]配置文件不存在或缺少 appid/appkey，请在 config.json 中配置 baidu_translate.appid 和 baidu_translate.appkey")
 
         salt = random.randint(32768, 65536)
         sign_text = appid + text + str(salt) + appkey
@@ -70,25 +74,16 @@ class BaiduTransDevApi:
                 translated = '\n'.join(
                     item['dst'] for item in data['trans_result']
                 )
-                return (translated,)
+                return io.NodeOutput(translated)
 
             error_code = data.get('error_code', '')
-            return (f"百度翻译 API 错误 [错误码: {error_code}]",)
+            return io.NodeOutput(f"百度翻译 API 错误 [错误码: {error_code}]")
 
         except requests.exceptions.Timeout:
-            return ("百度翻译请求超时，请稍后重试",)
+            return io.NodeOutput("百度翻译请求超时，请稍后重试")
         except requests.exceptions.ConnectionError:
-            return ("[错误]无法连接到百度翻译服务器，请检查网络",)
+            return io.NodeOutput("[错误]无法连接到百度翻译服务器，请检查网络")
         except requests.exceptions.RequestException:
-            return ("网络请求异常，请稍后重试",)
+            return io.NodeOutput("网络请求异常，请稍后重试")
         except Exception:
-            return ("[错误]翻译过程发生异常，请稍后重试",)
-
-
-NODE_CLASS_MAPPINGS = {
-    'BrotherPao_BaiduTrans': BaiduTransDevApi,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    'BrotherPao_BaiduTrans': '百度翻译(API)',
-}
+            return io.NodeOutput("[错误]翻译过程发生异常，请稍后重试")
