@@ -39,3 +39,32 @@ async def get_prompt_rules(request):
     except Exception as e:
         logger.error("[BrotherPao] get_prompt_rules failed: %s", e)
         return web.json_response({"error": "读取提示词规则失败"}, status=500)
+
+
+@PromptServer.instance.routes.get("/brotherpao/video_metadata")
+async def get_video_metadata(request):
+    try:
+        file = request.rel_url.query.get("file", "")
+        if not file:
+            return web.json_response({"error": "缺少视频文件参数"}, status=400)
+
+        import folder_paths
+        from comfy_api.latest import InputImpl
+
+        if not folder_paths.exists_annotated_filepath(file):
+            return web.json_response({"error": f"视频文件不存在: {file}"}, status=404)
+
+        video = InputImpl.VideoFromFile(folder_paths.get_annotated_filepath(file))
+        width, height = video.get_dimensions()
+        return web.json_response({
+            "file": file,
+            "width": width,
+            "height": height,
+            "duration": float(video.get_duration()),
+            "fps": float(video.get_frame_rate()),
+            "frame_count": int(video.get_frame_count()),
+            "bit_depth": int(video.get_bit_depth()),
+        })
+    except Exception as e:
+        logger.error("[BrotherPao] get_video_metadata failed: %s", e, exc_info=True)
+        return web.json_response({"error": "读取视频元数据失败"}, status=500)

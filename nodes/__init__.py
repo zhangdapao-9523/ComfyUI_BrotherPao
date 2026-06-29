@@ -9,6 +9,7 @@ from .ImageTileNodes import ImageAssemble, ImageResolutionDivider, ImageTileBatc
 from .InpaintCropAndStitch import InpaintCropImproved, InpaintStitchImproved
 from .IsNoInput import IsNoInput
 from .QwenMultiangle import QwenMultiangleCameraNode
+from .VisualVideoEditor import VisualVideoEditor
 from .YoloDetect import YoloDetect
 
 
@@ -28,6 +29,7 @@ BROTHERPAO_NODE_CLASSES: list[type[io.ComfyNode]] = [
     IsNoInput,
     YoloDetect,
     QwenMultiangleCameraNode,
+    VisualVideoEditor,
 ]
 
 
