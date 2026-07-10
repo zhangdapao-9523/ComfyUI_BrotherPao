@@ -1,6 +1,7 @@
 from comfy_api.latest import ComfyExtension, io
 
 from .BaiduTranslate import BaiduTransDevApi
+from .ConvertAny import ConvertAny
 from .DictionaryNodes import DictionaryGet, DictionaryNew, DictionaryUpdate
 from .FramesEditor import FramesEditor
 from .ImageColorMatch import ImageColorMatch
@@ -9,12 +10,14 @@ from .ImageTileNodes import ImageAssemble, ImageResolutionDivider, ImageTileBatc
 from .InpaintCropAndStitch import InpaintCropImproved, InpaintStitchImproved
 from .IsNoInput import IsNoInput
 from .QwenMultiangle import QwenMultiangleCameraNode
+from .VisualImageEditor import VisualImageEditor
 from .VisualVideoEditor import VisualVideoEditor
 from .YoloDetect import YoloDetect
 
 
 BROTHERPAO_NODE_CLASSES: list[type[io.ComfyNode]] = [
     BaiduTransDevApi,
+    ConvertAny,
     DictionaryUpdate,
     DictionaryGet,
     DictionaryNew,
@@ -29,6 +32,7 @@ BROTHERPAO_NODE_CLASSES: list[type[io.ComfyNode]] = [
     IsNoInput,
     YoloDetect,
     QwenMultiangleCameraNode,
+    VisualImageEditor,
     VisualVideoEditor,
 ]
 

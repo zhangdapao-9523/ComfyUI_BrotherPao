@@ -2,41 +2,32 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { applyZhLabels } from "./shared_utils.js";
 
-const NODE_CLASS = "BrotherPao_VisualVideoEditor";
-const DOM_WIDGET_NAME = "bp_visual_video_editor";
-const DEFAULT_SIZE = [520, 620];
-const MIN_EDITOR_HEIGHT = 360;
-const STATE_VERSION = 2;
+const NODE_CLASS = "BrotherPao_VisualImageEditor";
+const DOM_WIDGET_NAME = "bp_visual_image_editor";
+const DEFAULT_SIZE = [520, 540];
+const MIN_EDITOR_HEIGHT = 320;
+const STATE_VERSION = 1;
 const DEFAULT_DIVISOR = 16;
-const DEFAULT_PREVIEW_FRAMES = 1;
 const DIVISOR_MIN = 4;
 const DIVISOR_MAX = 128;
-const DIMENSION_MIN = 320;
-const DIMENSION_MAX = 4096;
-const FPS_MIN = 8;
-const FPS_MAX = 128;
-const IMAGE_FRAMES_MIN = 1;
-const IMAGE_FRAMES_MAX = 1000;
+const DIMENSION_MIN = 64;
+const DIMENSION_MAX = 16384;
 const MAX_NATIVE_SLIDER_STEPS = 100;
-const PREVIEW_KEYS = ["image", "images", "video", "videos", "gifs", "animated", "preview", "previews", "media"];
-const INPUT_WIDGET_NAMES = new Set(["file", "width", "height", "divisor", "fps", "preview_frames", "state"]);
-const LOCKED_WIDGET_NAMES = ["width", "height", "divisor", "fps"];
-const NATIVE_PREVIEW_WIDGET_NAMES = new Set(["video-preview", "$$comfy_animation_preview"]);
-const VISUAL_VIDEO_EDITOR_LABELS = {
-    file: "视频",
+const PREVIEW_KEYS = ["image", "images", "preview", "previews", "media"];
+const INPUT_WIDGET_NAMES = new Set(["file", "width", "height", "divisor", "state"]);
+const LOCKED_WIDGET_NAMES = ["width", "height", "divisor"];
+const NATIVE_PREVIEW_WIDGET_NAMES = new Set(["$$canvas-image-preview", "image-preview", "preview"]);
+const VISUAL_IMAGE_EDITOR_LABELS = {
+    file: "图像",
     width: "输出宽度",
     height: "输出高度",
     divisor: "分辨率倍率",
-    fps: "输出帧率",
-    preview_frames: "图像帧数",
     state: "编辑状态",
-    video: "视频",
-    images: "图像",
-    frame_count: "帧数",
+    image: "图像",
+    mask: "遮罩",
     crop_info: "裁剪信息",
 };
 const ICONS = {
-    play: `<svg viewBox="0 0 24 24"><path class="play" d="M8 5v14l11-7z"/><path class="pause" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>`,
     reset: `<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M3 12a9 9 0 1 0 3-6.7M3 4v6h6"/></svg>`,
     locked: `<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/></svg>`,
     unlocked: `<svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M8 10V8a5 5 0 0 1 9.2-2.7M6 10h12v10H6z"/></svg>`,
@@ -121,7 +112,6 @@ function setWidgetValue(node, name, value) {
     const item = widget(node, name);
     if (!item) return;
     item._bpCommittedValue = value;
-    if (item._bpVideoDisabledValueSet) item._bpVideoDisabledValue = value;
     if (item.value !== value) {
         item.value = value;
         syncWidgetElementValue(item, value);
@@ -153,29 +143,36 @@ function setWidgetStep(node, name, interactionStep, round = true, displayStep = 
     item.options = item.options || {};
     delete item.options.round;
     delete item.round;
-    const currentStep = Number(item.step);
-    const currentStep2 = Number(item.step2);
-    const currentOptionStep = Number(item.options?.step);
-    const currentOptionStep2 = Number(item.options?.step2);
-    if (
-        Number.isFinite(currentStep)
-        && currentStep === safeDisplayStep
-        && Number.isFinite(currentStep2)
-        && currentStep2 === safeInteractionStep
-        && Number.isFinite(currentOptionStep)
-        && currentOptionStep === safeDisplayStep
-        && Number.isFinite(currentOptionStep2)
-        && currentOptionStep2 === safeInteractionStep
-    ) {
-        if (item.inputEl && item.inputEl.step !== String(safeInteractionStep)) item.inputEl.step = String(safeInteractionStep);
-        return;
-    }
     item.step = safeDisplayStep;
     item.step2 = safeInteractionStep;
     item.options.step = safeDisplayStep;
     item.options.step2 = safeInteractionStep;
     if (item.inputEl) item.inputEl.step = String(safeInteractionStep);
-    markDirty(node);
+}
+
+function setWidgetDisabled(item, disabled) {
+    if (!item) return;
+    item.disabled = Boolean(disabled);
+    item.options = item.options || {};
+    item.options.disabled = Boolean(disabled);
+    const elements = [item.inputEl, item.element, item.domElement];
+    for (const element of elements) {
+        if (!element) continue;
+        if ("disabled" in element) element.disabled = Boolean(disabled);
+        if ("readOnly" in element) element.readOnly = Boolean(disabled);
+        element.classList?.toggle("bp-image-widget-disabled", Boolean(disabled));
+    }
+}
+
+function syncLockedWidgets(node, instance) {
+    const locked = Boolean(instance?.outputSettingsLocked);
+    for (const name of LOCKED_WIDGET_NAMES) {
+        setWidgetDisabled(widget(node, name), locked);
+    }
+}
+
+function divisor(node, inputValue = undefined) {
+    return Math.round(clamp(widgetInputNumber(node, "divisor", inputValue, DEFAULT_DIVISOR), DIVISOR_MIN, DIVISOR_MAX));
 }
 
 function syncDimensionWidgetSteps(node, inputValue = undefined) {
@@ -191,59 +188,27 @@ function syncDimensionWidgetSteps(node, inputValue = undefined) {
 function applyWidgetConstraints(node) {
     setWidgetRange(node, "divisor", DIVISOR_MIN, DIVISOR_MAX);
     setWidgetStep(node, "divisor", 1, true, sliderDisplayStep(DIVISOR_MIN, DIVISOR_MAX, 1));
-    setWidgetRange(node, "fps", FPS_MIN, FPS_MAX);
-    setWidgetStep(node, "fps", 0.01, false, sliderDisplayStep(FPS_MIN, FPS_MAX, 0.01));
-    setWidgetRange(node, "preview_frames", IMAGE_FRAMES_MIN, IMAGE_FRAMES_MAX);
-    setWidgetStep(node, "preview_frames", 1, true, sliderDisplayStep(IMAGE_FRAMES_MIN, IMAGE_FRAMES_MAX, 1));
     syncDimensionWidgetSteps(node);
     syncLockedWidgets(node, instances.get(node));
 }
 
-function setWidgetDisabled(item, disabled) {
-    if (!item) return;
-    const isDisabled = Boolean(disabled);
-    if (isDisabled && !item._bpVideoDisabledValueSet) {
-        item._bpVideoDisabledValue = item.value;
-        item._bpVideoDisabledValueSet = true;
-    } else if (!isDisabled) {
-        delete item._bpVideoDisabledValue;
-        delete item._bpVideoDisabledValueSet;
-    }
-    item.disabled = isDisabled;
-    item.options = item.options || {};
-    item.options.disabled = isDisabled;
-    const elements = [item.inputEl, item.element, item.domElement];
-    for (const element of elements) {
-        if (!element) continue;
-        if ("disabled" in element) element.disabled = isDisabled;
-        if ("readOnly" in element) element.readOnly = isDisabled;
-        element.classList?.toggle("bp-video-widget-disabled", isDisabled);
-    }
-}
-
-function syncLockedWidgets(node, instance) {
-    const locked = Boolean(instance?.outputSettingsLocked);
-    for (const name of LOCKED_WIDGET_NAMES) {
-        setWidgetDisabled(widget(node, name), locked);
-    }
-}
-
 function installWidgetCallback(item, callback) {
-    if (!item || item._bpVideoCallbackInstalled) return;
-    item._bpVideoCallbackInstalled = true;
+    if (!item || item._bpImageCallbackInstalled) return;
+    item._bpImageCallbackInstalled = true;
     const original = item.callback;
     item.callback = function () {
-        if (item.disabled || item.options?.disabled) {
-            if (item._bpVideoDisabledValueSet) {
-                item.value = item._bpVideoDisabledValue;
-                syncWidgetElementValue(item, item._bpVideoDisabledValue);
-            }
-            return item.value;
-        }
         const result = original?.apply(this, arguments);
         const callbackArgs = arguments.length ? arguments : [this?.value ?? item.value];
         callback.apply(this, callbackArgs);
         return result;
+    };
+}
+
+function replaceWidgetCallback(item, callback) {
+    if (!item || item._bpImageCallbackReplaced) return;
+    item._bpImageCallbackReplaced = true;
+    item.callback = function () {
+        callback.apply(this, arguments);
     };
 }
 
@@ -260,22 +225,10 @@ function t(en, zh) {
     return locale() === "zh" ? zh : en;
 }
 
-function formatTime(seconds) {
-    const safe = Math.max(0, Number(seconds) || 0);
-    const minutes = Math.floor(safe / 60);
-    const rest = safe - minutes * 60;
-    return `${minutes}:${rest.toFixed(2).padStart(5, "0")}`;
-}
-
-function formatFrameCount(frames) {
-    const count = Math.max(0, Math.round(Number(frames) || 0));
-    return locale() === "zh" ? `${count}帧` : `${count} ${count === 1 ? "frame" : "frames"}`;
-}
-
-function applyVisualVideoEditorLabels(node) {
-    applyZhLabels(node, VISUAL_VIDEO_EDITOR_LABELS);
+function applyVisualImageEditorLabels(node) {
+    applyZhLabels(node, VISUAL_IMAGE_EDITOR_LABELS);
     for (const output of node.outputs || []) {
-        const label = VISUAL_VIDEO_EDITOR_LABELS[output.name] || VISUAL_VIDEO_EDITOR_LABELS[output.label] || VISUAL_VIDEO_EDITOR_LABELS[output.localized_name];
+        const label = VISUAL_IMAGE_EDITOR_LABELS[output.name] || VISUAL_IMAGE_EDITOR_LABELS[output.label] || VISUAL_IMAGE_EDITOR_LABELS[output.localized_name];
         if (!label) continue;
         output.label = label;
         output.localized_name = label;
@@ -317,14 +270,13 @@ function annotatedFileParts(value) {
     return { filename, subfolder: parts.join("/"), type };
 }
 
-function videoUrl(file) {
+function imageUrl(file) {
     const parts = annotatedFileParts(file);
     if (!parts?.filename) return "";
     const params = new URLSearchParams({
         filename: parts.filename,
         type: parts.type,
         subfolder: parts.subfolder || "",
-        channel: "other",
         rand: String(Date.now()),
     });
     return api.apiURL(`/view?${params.toString()}`);
@@ -332,7 +284,7 @@ function videoUrl(file) {
 
 async function fetchMetadata(file) {
     const params = new URLSearchParams({ file });
-    const response = await fetch(api.apiURL(`/brotherpao/video_metadata?${params.toString()}`));
+    const response = await fetch(api.apiURL(`/brotherpao/image_metadata?${params.toString()}`));
     const payload = await response.json();
     if (!response.ok) {
         throw new Error(payload?.error || response.statusText);
@@ -356,7 +308,7 @@ function storedStateFile(node) {
     return typeof value === "string" ? value : "";
 }
 
-function videoFileForLoad(node, instance) {
+function imageFileForLoad(node, instance) {
     const currentFile = widget(node, "file")?.value || "";
     const savedFile = storedStateFile(node);
     if (!instance?.metadata && !instance?.requestedFile && savedFile) {
@@ -375,21 +327,17 @@ function writeState(node, instance) {
             file: widget(node, "file")?.value || "",
             width: instance.metadata.width,
             height: instance.metadata.height,
-            duration: instance.metadata.duration,
-            fps: instance.metadata.fps,
-            frame_count: instance.metadata.frame_count,
+            mode: instance.metadata.mode,
+            has_alpha: Boolean(instance.metadata.has_alpha),
         },
         output: {
             width: output.width,
             height: output.height,
-            fps: outputFps(node, instance),
             divisor: divisor(node),
-            preview_frames: Math.round(clamp(widgetNumber(node, "preview_frames", DEFAULT_PREVIEW_FRAMES), IMAGE_FRAMES_MIN, IMAGE_FRAMES_MAX)),
             dimension_auto_scale_used: Boolean(instance.dimensionAutoScaleUsed),
             settings_locked: Boolean(instance.outputSettingsLocked),
         },
         crop: clone(instance.crop),
-        timeline: clone(instance.timeline),
     };
     setWidgetValue(node, "state", JSON.stringify(state));
 }
@@ -404,19 +352,9 @@ function applyStoredOutputWidgets(node, stored) {
 
     const width = Number(output.width);
     const height = Number(output.height);
-    const fps = Number(output.fps);
-    const frames = Number(output.preview_frames);
     if (Number.isFinite(width)) setWidgetValue(node, "width", alignOutputDimension(width, div));
     if (Number.isFinite(height)) setWidgetValue(node, "height", alignOutputDimension(height, div));
-    if (Number.isFinite(fps)) setWidgetValue(node, "fps", Math.round(clamp(fps, FPS_MIN, FPS_MAX) * 1000) / 1000);
-    if (Number.isFinite(frames)) {
-        setWidgetValue(node, "preview_frames", Math.round(clamp(frames, IMAGE_FRAMES_MIN, IMAGE_FRAMES_MAX)));
-    }
     return true;
-}
-
-function divisor(node, inputValue = undefined) {
-    return Math.round(clamp(widgetInputNumber(node, "divisor", inputValue, DEFAULT_DIVISOR), DIVISOR_MIN, DIVISOR_MAX));
 }
 
 function alignDimension(value, div, min = 1, max = Number.MAX_SAFE_INTEGER) {
@@ -470,7 +408,7 @@ function outputRatio(node, instance) {
 function alignDownDimension(value, div) {
     const raw = Math.max(1, Math.floor(Number(value) || 1));
     if (div <= 1) return raw;
-    return Math.max(div, Math.floor(raw / div) * div);
+    return Math.max(1, Math.floor(raw / div) * div);
 }
 
 function fitCropSize(node, instance, desiredW, desiredH, maxW, maxH) {
@@ -487,8 +425,8 @@ function fitCropSize(node, instance, desiredW, desiredH, maxW, maxH) {
     if (w > limitW || h > limitH) {
         w = alignDownDimension(Math.min(limitW, limitH * ratio), div);
         h = alignDownDimension(w / ratio, div);
-        while ((w > limitW || h > limitH) && w > div) {
-            w = alignDownDimension(w - div, div);
+        while ((w > limitW || h > limitH) && w > 1) {
+            w = alignDownDimension(w - 1, div);
             h = alignDownDimension(w / ratio, div);
         }
     }
@@ -527,47 +465,25 @@ function defaultCrop(node, instance) {
     });
 }
 
-function clampTimeline(instance, timeline) {
-    const duration = Math.max(0, Number(instance.metadata?.duration) || 0);
-    let start = Math.max(0, Math.min(duration, Number(timeline?.start) || 0));
-    let end = Math.max(0, Math.min(duration, Number(timeline?.end) || duration));
-    if (end <= start) {
-        start = 0;
-        end = duration;
-    }
-    return { start, end };
-}
-
 function sourcePoint(instance, event) {
     const rect = instance.stage.getBoundingClientRect();
     const meta = instance.metadata;
+    const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * meta.width;
+    const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * meta.height;
     return {
-        x: Math.max(0, Math.min(meta.width, ((event.clientX - rect.left) / rect.width) * meta.width)),
-        y: Math.max(0, Math.min(meta.height, ((event.clientY - rect.top) / rect.height) * meta.height)),
+        x: Math.max(0, Math.min(meta.width, x)),
+        y: Math.max(0, Math.min(meta.height, y)),
     };
 }
 
-function outputDuration(instance) {
-    if (!instance?.metadata || !instance.timeline) return 0;
-    return Math.max(0, Number(instance.timeline.end || 0) - Number(instance.timeline.start || 0));
-}
-
-function outputFps(node, instance) {
-    return clamp(widgetNumber(node, "fps", 0) || Number(instance?.metadata?.fps) || FPS_MIN, FPS_MIN, FPS_MAX);
-}
-
 function updateOutputInfo(instance) {
-    if (!instance?.rightInfo) return;
-    if (!instance.metadata || !instance.crop) {
+    if (!instance?.metadata || !instance.crop) {
         instance.rightInfo.textContent = "";
         instance.rightInfo.title = "";
         return;
     }
-
-    const duration = outputDuration(instance);
-    const frames = Math.max(1, Math.round(duration * outputFps(instance.node, instance)));
     const size = outputSize(instance.node, instance);
-    const text = `${instance.crop.w} x ${instance.crop.h} (${instance.crop.x}, ${instance.crop.y}) -> ${size.width} x ${size.height} · ${formatFrameCount(frames)} · ${formatTime(duration)}`;
+    const text = `${instance.crop.w} x ${instance.crop.h} (${instance.crop.x}, ${instance.crop.y}) -> ${size.width} x ${size.height}`;
     instance.rightInfo.textContent = text;
     instance.rightInfo.title = text;
 }
@@ -609,28 +525,15 @@ function updateCropElement(instance) {
     updateOutputInfo(instance);
 }
 
-function updateTimeline(instance) {
-    const duration = Math.max(0.001, Number(instance.metadata?.duration) || 0.001);
-    const startPct = (instance.timeline.start / duration) * 100;
-    const endPct = (instance.timeline.end / duration) * 100;
-    instance.rangeFill.style.left = `${startPct}%`;
-    instance.rangeFill.style.right = `${Math.max(0, 100 - endPct)}%`;
-    instance.startHandle.style.left = `${startPct}%`;
-    instance.endHandle.style.left = `${endPct}%`;
-    instance.timeInfo.textContent = `${formatTime(instance.timeline.start)} - ${formatTime(instance.timeline.end)} / ${formatTime(duration)}`;
-    updateOutputInfo(instance);
-}
-
 function updateStage(instance) {
     const meta = instance.metadata;
     if (!meta) {
-        instance.stage.style.aspectRatio = "16 / 9";
+        instance.stage.style.aspectRatio = "1 / 1";
         updateOutputInfo(instance);
         return;
     }
     instance.stage.style.aspectRatio = `${meta.width} / ${meta.height}`;
     updateCropElement(instance);
-    updateTimeline(instance);
 }
 
 function updateStatus(instance, text) {
@@ -653,7 +556,7 @@ function stripAutoPreviewOutput(output) {
     return cleaned;
 }
 
-function isVisualVideoNode(node) {
+function isVisualImageNode(node) {
     return node?.constructor?.comfyClass === NODE_CLASS
         || node?.comfyClass === NODE_CLASS
         || node?.type === NODE_CLASS;
@@ -669,10 +572,9 @@ function removeStoreEntryForNode(store, node) {
     }
 }
 
-function preventSystemVideoPreview(node) {
+function preventSystemImagePreview(node) {
     if (!node) return;
     node.hideOutputImages = true;
-    node.hideOutputVideos = true;
 }
 
 function hideVueSystemPreview(node) {
@@ -681,30 +583,25 @@ function hideVueSystemPreview(node) {
     const root = [...document.querySelectorAll("[data-node-id]")]
         .find((element) => element.dataset?.nodeId === nodeId);
     if (!root) return;
-    root.classList.add("bp-video-suppress-system-preview");
+    root.classList.add("bp-image-suppress-system-preview");
     for (const element of root.querySelectorAll(".lg-node-content")) {
-        if (!element.closest(".bp-video-editor")) hideElement(element);
+        if (!element.closest(".bp-image-editor")) hideElement(element);
     }
 }
 
 function clearNodePreviewState(node) {
     if (!node) return;
-    preventSystemVideoPreview(node);
+    preventSystemImagePreview(node);
     hideVueSystemPreview(node);
     node.imgs = undefined;
     node.images = undefined;
     node.imageIndex = null;
-    node.animatedImages = undefined;
-    node.videos = undefined;
-    node.videoIndex = null;
-    node.videoContainer = undefined;
     node.previewMediaType = undefined;
     node.isLoading = false;
     node.media = undefined;
     node.preview = undefined;
     node.previewImages = undefined;
     node.outputImages = undefined;
-    node.outputVideos = undefined;
 
     removeStoreEntryForNode(app.nodeOutputs, node);
     removeStoreEntryForNode(app.nodePreviewImages, node);
@@ -749,7 +646,8 @@ function removeNativePreviewWidgets(node) {
     for (let i = node.widgets.length - 1; i >= 0; i--) {
         const item = node.widgets[i];
         const isNativePreview = NATIVE_PREVIEW_WIDGET_NAMES.has(item.name)
-            || /^\$\$.*video.*preview$/i.test(item.name || "");
+            || /^\$\$.*image.*preview$/i.test(item.name || "")
+            || (item.name === "image" && item.type === "custom");
         if (!isNativePreview) continue;
 
         const element = item.element || item.inputEl || item.domElement;
@@ -761,9 +659,9 @@ function removeNativePreviewWidgets(node) {
 }
 
 function suppressAutoPreview(node) {
-    if (!isVisualVideoNode(node)) return;
+    if (!isVisualImageNode(node)) return;
     const instance = instances.get(node);
-    preventSystemVideoPreview(node);
+    preventSystemImagePreview(node);
     removeNativePreviewWidgets(node);
     clearNodePreviewState(node);
 
@@ -773,7 +671,7 @@ function suppressAutoPreview(node) {
         const hasMedia = hideMediaDescendants(element, instance);
         const rootIsMedia = /^(VIDEO|IMG|CANVAS)$/.test(element?.tagName || "");
         const isInputWidget = INPUT_WIDGET_NAMES.has(item.name);
-        const looksLikePreview = !isInputWidget && /preview|image|video|media|output|animation/i.test(`${item.name || ""} ${item.type || ""}`);
+        const looksLikePreview = !isInputWidget && /preview|image|media|output/i.test(`${item.name || ""} ${item.type || ""}`);
         if (!hasMedia && !looksLikePreview && !rootIsMedia) continue;
         if (!isInputWidget || rootIsMedia || looksLikePreview) {
             hideWidgetShape(item);
@@ -796,18 +694,10 @@ function wrapExecutedHandler(target, flagName) {
     target[flagName] = true;
     const original = target.onExecuted;
     target.onExecuted = function (output) {
-        const shouldSuppress = isVisualVideoNode(this);
+        const shouldSuppress = isVisualImageNode(this);
         const result = original?.call(this, shouldSuppress ? stripAutoPreviewOutput(output) : output);
         if (shouldSuppress) scheduleSuppressAutoPreview(this);
         return result;
-    };
-}
-
-function replaceWidgetCallback(item, callback) {
-    if (!item || item._bpVideoCallbackReplaced) return;
-    item._bpVideoCallbackReplaced = true;
-    item.callback = function () {
-        callback.apply(this, arguments);
     };
 }
 
@@ -823,7 +713,7 @@ function installExecutedEventFilter() {
     api.addEventListener?.("executed", (event) => {
         const detail = event?.detail;
         const node = graphNodeById(detail?.display_node ?? detail?.node) || graphNodeById(detail?.node);
-        if (!isVisualVideoNode(node)) return;
+        if (!isVisualImageNode(node)) return;
         detail.output = stripAutoPreviewOutput(detail.output);
         scheduleSuppressAutoPreview(node);
     }, { capture: true });
@@ -837,14 +727,12 @@ function applyStoredOrDefaultState(node, instance, forceDefault = false, fallbac
         instance.dimensionAutoScaleUsed = Boolean(stored.output?.dimension_auto_scale_used);
         instance.outputSettingsLocked = Boolean(stored.output?.settings_locked);
         instance.crop = normalizeCrop(node, instance, stored.crop);
-        instance.timeline = clampTimeline(instance, stored.timeline);
     } else {
         if (forceDefault) instance.outputSettingsLocked = false;
         instance.dimensionAutoScaleUsed = false;
         instance.crop = !forceDefault && instance.outputSettingsLocked && fallbackCrop
             ? normalizeCrop(node, instance, fallbackCrop)
             : defaultCrop(node, instance);
-        instance.timeline = { start: 0, end: Math.max(0, Number(instance.metadata.duration) || 0) };
     }
     updateLockButton(instance);
     writeState(node, instance);
@@ -855,7 +743,6 @@ function sourceOutputDefaults(node, instance) {
     return {
         width: alignOutputDimension(instance.metadata.width, div),
         height: alignOutputDimension(instance.metadata.height, div),
-        fps: Math.round(clamp(Number(instance.metadata.fps) || FPS_MIN, FPS_MIN, FPS_MAX) * 1000) / 1000,
     };
 }
 
@@ -867,21 +754,19 @@ function setDefaultOutputWidgets(node, instance, resetDivisor = false) {
     const defaults = sourceOutputDefaults(node, instance);
     setWidgetValue(node, "width", defaults.width);
     setWidgetValue(node, "height", defaults.height);
-    setWidgetValue(node, "fps", defaults.fps);
     syncOutputRatio(node, instance);
 }
 
-function shouldUseSourceOutputDefaults(node, instance, forceDefaults, hadLoadedVideo = false) {
+function shouldUseSourceOutputDefaults(node, instance, forceDefaults, hadLoadedImage = false) {
     if (forceDefaults || widgetNumber(node, "width", 0) <= 0 || widgetNumber(node, "height", 0) <= 0) return true;
     if (instance?.outputSettingsLocked) return false;
-    if (hadLoadedVideo) return true;
+    if (hadLoadedImage) return true;
 
     const stored = readState(node);
     if (stored?.version === STATE_VERSION && stored?.source?.file === widget(node, "file")?.value) return false;
 
-    return widgetNumber(node, "width", 0) === DIMENSION_MIN
-        && widgetNumber(node, "height", 0) === DIMENSION_MIN
-        && widgetNumber(node, "fps", 0) === FPS_MIN;
+    return widgetNumber(node, "width", 0) === 512
+        && widgetNumber(node, "height", 0) === 512;
 }
 
 function applyDivisorSettings(node, instance, inputValue = undefined) {
@@ -946,33 +831,31 @@ function resetEditorState(node, instance) {
     if (!instance?.metadata) return;
     setOutputSettingsLocked(node, instance, false, false);
     setDefaultOutputWidgets(node, instance, true);
-    setWidgetValue(node, "preview_frames", DEFAULT_PREVIEW_FRAMES);
-    instance.timeline = { start: 0, end: Math.max(0, Number(instance.metadata.duration) || 0) };
     instance.crop = defaultCrop(node, instance);
-    instance.video.currentTime = instance.timeline.start;
-    instance.video.pause();
     updateStage(instance);
     writeState(node, instance);
     markDirty(node);
 }
 
-async function loadVideo(node, instance, forceDefaults = false) {
-    const file = videoFileForLoad(node, instance);
+async function loadImage(node, instance, forceDefaults = false) {
+    const file = imageFileForLoad(node, instance);
     if (!file) {
         instance.metadata = null;
         instance.crop = null;
         instance.requestedFile = "";
-        updateStatus(instance, t("Select or upload a video", "选择或上传视频"));
+        instance.image.removeAttribute("src");
+        updateStatus(instance, t("Select or upload an image", "选择或上传图像"));
         updateStage(instance);
+        updateWidgetHeight(node);
         return;
     }
 
-    const hadLoadedVideo = Boolean(instance.metadata);
+    const hadLoadedImage = Boolean(instance.metadata);
     const previousCrop = instance.crop ? clone(instance.crop) : null;
     const currentToken = `${file}:${Date.now()}`;
     instance.requestedFile = file;
     instance.loadToken = currentToken;
-    updateStatus(instance, t("Loading video metadata", "正在读取视频信息"));
+    updateStatus(instance, t("Loading image metadata", "正在读取图像信息"));
 
     try {
         const metadata = await fetchMetadata(file);
@@ -987,43 +870,29 @@ async function loadVideo(node, instance, forceDefaults = false) {
             updateLockButton(instance);
         }
 
-        if (shouldUseSourceOutputDefaults(node, instance, forceDefaults, hadLoadedVideo)) {
+        if (shouldUseSourceOutputDefaults(node, instance, forceDefaults, hadLoadedImage)) {
             setDefaultOutputWidgets(node, instance, forceDefaults);
         } else {
             const size = outputSize(node, instance);
             setWidgetValue(node, "width", size.width);
             setWidgetValue(node, "height", size.height);
-            if (widgetNumber(node, "fps", 0) <= 0) {
-                setWidgetValue(node, "fps", Math.round(outputFps(node, instance) * 1000) / 1000);
-            } else {
-                setWidgetValue(node, "fps", Math.round(outputFps(node, instance) * 1000) / 1000);
-            }
-            setWidgetValue(node, "preview_frames", Math.round(clamp(widgetNumber(node, "preview_frames", DEFAULT_PREVIEW_FRAMES), IMAGE_FRAMES_MIN, IMAGE_FRAMES_MAX)));
         }
 
         applyStoredOrDefaultState(node, instance, forceDefaults, previousCrop);
-        instance.video.src = videoUrl(file);
-        instance.video.currentTime = instance.timeline.start || 0;
-        instance.video.load();
+        instance.image.src = imageUrl(file);
         updateStatus(instance, "");
         updateStage(instance);
+        updateWidgetHeight(node);
         markDirty(node);
     } catch (error) {
-        console.error("[VisualVideoEditor] Failed to load video:", error);
-        updateStatus(instance, error.message || t("Failed to load video", "视频加载失败"));
+        console.error("[VisualImageEditor] Failed to load image:", error);
+        updateStatus(instance, error.message || t("Failed to load image", "图像加载失败"));
     }
-}
-
-function setPlayState(instance, isPlaying) {
-    instance.playBtn.classList.toggle("playing", isPlaying);
-    const title = isPlaying ? t("Pause", "暂停") : t("Play", "播放");
-    instance.playBtn.title = title;
-    instance.playBtn.setAttribute("aria-label", title);
 }
 
 function buildHandle(name) {
     const handle = document.createElement("div");
-    handle.className = `bp-video-crop-handle ${name}`;
+    handle.className = `bp-image-crop-handle ${name}`;
     handle.dataset.handle = name;
     return handle;
 }
@@ -1069,14 +938,7 @@ function resizeFromHandle(node, instance, handle, point) {
         : handle.includes("s")
             ? meta.height - start.y
             : Math.max(1, 2 * Math.min(centerY, meta.height - centerY));
-    const size = fitCropSize(
-        node,
-        instance,
-        desiredW,
-        desiredH,
-        maxW,
-        maxH,
-    );
+    const size = fitCropSize(node, instance, desiredW, desiredH, maxW, maxH);
     let x = start.x;
     let y = start.y;
     if (handle.includes("w")) x = start.x + start.w - size.w;
@@ -1151,137 +1013,43 @@ function installPointerHandlers(node, instance) {
     instance.stage.addEventListener("pointercancel", finish);
 }
 
-function timeFromTrack(instance, event) {
-    const rect = instance.rangeTrack.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    return pct * Math.max(0, Number(instance.metadata?.duration) || 0);
-}
-
-function scheduleVideoLoad(node, instance, forceDefaults = false) {
+function scheduleImageLoad(node, instance, forceDefaults = false) {
     if (!instance || instance.scheduledLoadFrame) return;
     instance.scheduledLoadFrame = requestAnimationFrame(() => {
         instance.scheduledLoadFrame = null;
-        loadVideo(node, instance, forceDefaults);
+        loadImage(node, instance, forceDefaults);
     });
-}
-
-function applyVideoSeek(instance, time, precise = false) {
-    const duration = Math.max(0, Number(instance.metadata?.duration) || 0);
-    const target = Math.max(0, Math.min(duration, Number(time) || 0));
-    if (Math.abs((Number(instance.video.currentTime) || 0) - target) < 0.01) return;
-    try {
-        if (!precise && typeof instance.video.fastSeek === "function") instance.video.fastSeek(target);
-        else instance.video.currentTime = target;
-    } catch (_) {
-        instance.video.currentTime = target;
-    }
-}
-
-function scheduleVideoSeek(instance, time) {
-    instance.pendingSeekTime = time;
-    if (instance.seekFrame) return;
-    instance.seekFrame = requestAnimationFrame(() => {
-        instance.seekFrame = null;
-        const target = instance.pendingSeekTime;
-        instance.pendingSeekTime = null;
-        applyVideoSeek(instance, target);
-    });
-}
-
-function flushVideoSeek(instance) {
-    if (instance.seekFrame) {
-        cancelAnimationFrame(instance.seekFrame);
-        instance.seekFrame = null;
-    }
-    if (instance.pendingSeekTime != null) {
-        const target = instance.pendingSeekTime;
-        instance.pendingSeekTime = null;
-        applyVideoSeek(instance, target, true);
-    }
-}
-
-function installTimelineHandlers(node, instance) {
-    const beginDrag = (kind, event) => {
-        if (!instance.metadata) return;
-        consume(event);
-        instance.rangeTrack.setPointerCapture?.(event.pointerId);
-        instance.rangeDrag = kind;
-        instance.video.pause();
-    };
-    instance.startHandle.addEventListener("pointerdown", (event) => beginDrag("start", event));
-    instance.endHandle.addEventListener("pointerdown", (event) => beginDrag("end", event));
-    instance.rangeTrack.addEventListener("pointerdown", (event) => {
-        if (event.target === instance.startHandle || event.target === instance.endHandle) return;
-        const time = timeFromTrack(instance, event);
-        const startDistance = Math.abs(time - instance.timeline.start);
-        const endDistance = Math.abs(time - instance.timeline.end);
-        beginDrag(startDistance <= endDistance ? "start" : "end", event);
-        updateTimelineDrag(node, instance, event);
-    });
-    instance.rangeTrack.addEventListener("pointermove", (event) => {
-        if (!instance.rangeDrag) return;
-        updateTimelineDrag(node, instance, event);
-    });
-    const endDrag = (event) => {
-        if (!instance.rangeDrag) return;
-        consume(event);
-        flushVideoSeek(instance);
-        instance.rangeDrag = null;
-        writeState(node, instance);
-        markDirty(node);
-    };
-    instance.rangeTrack.addEventListener("pointerup", endDrag);
-    instance.rangeTrack.addEventListener("pointercancel", endDrag);
-}
-
-function updateTimelineDrag(node, instance, event) {
-    const duration = Math.max(0, Number(instance.metadata?.duration) || 0);
-    const time = timeFromTrack(instance, event);
-    const minGap = Math.min(0.05, duration / 100);
-    let previewTime;
-    if (instance.rangeDrag === "start") {
-        instance.timeline.start = Math.max(0, Math.min(time, instance.timeline.end - minGap));
-        previewTime = instance.timeline.start;
-    } else {
-        instance.timeline.end = Math.min(duration, Math.max(time, instance.timeline.start + minGap));
-        previewTime = instance.timeline.end;
-    }
-    updateTimeline(instance);
-    scheduleVideoSeek(instance, previewTime);
 }
 
 function buildEditor(node) {
     const container = document.createElement("div");
-    container.className = "bp-video-editor";
+    container.className = "bp-image-editor";
 
     const toolbar = document.createElement("div");
-    toolbar.className = "bp-video-toolbar";
+    toolbar.className = "bp-image-toolbar";
     container.appendChild(toolbar);
 
-    const leftTools = document.createElement("div");
-    leftTools.className = "bp-video-tools";
-    toolbar.appendChild(leftTools);
+    const tools = document.createElement("div");
+    tools.className = "bp-image-tools";
+    toolbar.appendChild(tools);
 
-    const playBtn = makeIconButton("bp-video-btn", t("Play", "播放"), ICONS.play);
-    const resetBtn = makeIconButton("bp-video-btn", t("Reset State", "重置所有状态"), ICONS.reset);
-    const lockBtn = makeIconButton("bp-video-btn bp-video-lock-btn", t("Lock output settings", "锁定输出设置"), ICONS.unlocked);
     const rightInfo = document.createElement("div");
-    rightInfo.className = "bp-video-meta";
-    leftTools.append(playBtn, rightInfo, resetBtn, lockBtn);
+    rightInfo.className = "bp-image-meta";
+    const resetBtn = makeIconButton("bp-image-btn", t("Reset State", "重置所有状态"), ICONS.reset);
+    const lockBtn = makeIconButton("bp-image-btn bp-image-lock-btn", t("Lock output settings", "锁定输出设置"), ICONS.unlocked);
+    tools.append(rightInfo, resetBtn, lockBtn);
 
     const stage = document.createElement("div");
-    stage.className = "bp-video-stage";
+    stage.className = "bp-image-stage";
     container.appendChild(stage);
 
-    const video = document.createElement("video");
-    video.muted = false;
-    video.volume = 1;
-    video.playsInline = true;
-    video.preload = "metadata";
-    stage.appendChild(video);
+    const image = document.createElement("img");
+    image.alt = "";
+    image.draggable = false;
+    stage.appendChild(image);
 
     const cropBox = document.createElement("div");
-    cropBox.className = "bp-video-crop-box";
+    cropBox.className = "bp-image-crop-box";
     cropBox.hidden = true;
     for (const name of ["n", "e", "s", "w", "nw", "ne", "se", "sw"]) {
         cropBox.appendChild(buildHandle(name));
@@ -1289,86 +1057,36 @@ function buildEditor(node) {
     stage.appendChild(cropBox);
 
     const status = document.createElement("div");
-    status.className = "bp-video-status";
-    status.textContent = t("Select or upload a video", "选择或上传视频");
+    status.className = "bp-image-status";
+    status.textContent = t("Select or upload an image", "选择或上传图像");
     stage.appendChild(status);
-
-    const timelineEl = document.createElement("div");
-    timelineEl.className = "bp-video-timeline";
-    container.appendChild(timelineEl);
-
-    const rangeRow = document.createElement("div");
-    rangeRow.className = "bp-video-range-row";
-    timelineEl.appendChild(rangeRow);
-
-    const timeInfo = document.createElement("div");
-    timeInfo.className = "bp-video-time-info";
-    timeInfo.textContent = "0:00.00 - 0:00.00 / 0:00.00";
-    rangeRow.appendChild(timeInfo);
-
-    const rangeTrack = document.createElement("div");
-    rangeTrack.className = "bp-video-range-track";
-    rangeRow.appendChild(rangeTrack);
-
-    const rangeFill = document.createElement("div");
-    rangeFill.className = "bp-video-range-fill";
-    rangeTrack.appendChild(rangeFill);
-
-    const startHandle = document.createElement("div");
-    startHandle.className = "bp-video-range-handle start";
-    rangeTrack.appendChild(startHandle);
-
-    const endHandle = document.createElement("div");
-    endHandle.className = "bp-video-range-handle end";
-    rangeTrack.appendChild(endHandle);
 
     const instance = {
         node,
         container,
         toolbar,
+        tools,
         rightInfo,
-        playBtn,
         resetBtn,
         lockBtn,
         stage,
-        video,
+        image,
         cropBox,
         status,
-        timelineEl,
-        rangeTrack,
-        rangeFill,
-        startHandle,
-        endHandle,
-        timeInfo,
         widget: null,
         metadata: null,
         crop: null,
-        timeline: { start: 0, end: 0 },
         drag: null,
-        rangeDrag: null,
-        seekFrame: null,
-        pendingSeekTime: null,
         dimensionFrame: null,
         dimensionAutoScaleUsed: false,
         outputSettingsLocked: false,
+        outputAspectRatio: 1,
         loadToken: null,
         requestedFile: "",
         scheduledLoadFrame: null,
     };
     updateLockButton(instance);
 
-    playBtn.addEventListener("click", (event) => {
-        consume(event);
-        if (!instance.metadata) return;
-        if (video.paused) {
-            if (video.currentTime < instance.timeline.start || video.currentTime >= instance.timeline.end) {
-                video.currentTime = instance.timeline.start;
-            }
-            video.play();
-        } else {
-            video.pause();
-        }
-    });
     resetBtn.addEventListener("click", (event) => {
         consume(event);
         if (!instance.metadata) return;
@@ -1378,41 +1096,22 @@ function buildEditor(node) {
         consume(event);
         setOutputSettingsLocked(node, instance, !instance.outputSettingsLocked);
     });
-
-    video.addEventListener("play", () => setPlayState(instance, true));
-    video.addEventListener("pause", () => setPlayState(instance, false));
-    video.addEventListener("timeupdate", () => {
-        if (!instance.metadata || video.paused) return;
-        if (video.currentTime >= instance.timeline.end) {
-            video.currentTime = instance.timeline.start;
-        }
+    image.addEventListener("load", () => {
+        updateStatus(instance, "");
+        updateWidgetHeight(node);
     });
-    video.addEventListener("loadedmetadata", () => {
-        if (!instance.metadata && video.videoWidth && video.videoHeight) {
-            instance.metadata = {
-                width: video.videoWidth,
-                height: video.videoHeight,
-                duration: video.duration || 0,
-                fps: widgetNumber(node, "fps", 0) || 0,
-                frame_count: 0,
-            };
-            if (widgetNumber(node, "width", 0) <= 0 || widgetNumber(node, "height", 0) <= 0) {
-                setDefaultOutputWidgets(node, instance, false);
-            }
-            applyStoredOrDefaultState(node, instance, false);
-            updateStage(instance);
-        }
+    image.addEventListener("error", () => {
+        if (instance.metadata) updateStatus(instance, t("Failed to display image", "图像显示失败"));
     });
 
     installPointerHandlers(node, instance);
-    installTimelineHandlers(node, instance);
-    for (const element of [container, stage, cropBox, rangeTrack]) {
+    for (const element of [container, stage, cropBox]) {
         element.addEventListener("contextmenu", consume, { capture: true });
     }
 
     instances.set(node, instance);
     updateStage(instance);
-    scheduleVideoLoad(node, instance, false);
+    scheduleImageLoad(node, instance, false);
     return instance;
 }
 
@@ -1422,8 +1121,8 @@ function updateWidgetHeight(node) {
     suppressAutoPreview(node);
     const width = Math.max(260, node.size?.[0] || DEFAULT_SIZE[0]);
     const meta = instance.metadata;
-    const previewHeight = meta ? (width - 24) * (meta.height / meta.width) : 260;
-    const height = Math.max(MIN_EDITOR_HEIGHT, Math.min(760, previewHeight + 88));
+    const previewHeight = meta ? (width - 12) * (meta.height / meta.width) : 260;
+    const height = Math.max(MIN_EDITOR_HEIGHT, Math.min(760, previewHeight + 44));
     instance.container.style.height = `${height}px`;
 }
 
@@ -1433,7 +1132,7 @@ function createWidget(node) {
     const instance = instances.get(node) || buildEditor(node);
     if (instance.widget && node.widgets?.includes(instance.widget)) return instance.widget;
 
-    const widgetObject = node.addDOMWidget(DOM_WIDGET_NAME, "brotherpao-visual-video-editor", instance.container, {
+    const widgetObject = node.addDOMWidget(DOM_WIDGET_NAME, "brotherpao-visual-image-editor", instance.container, {
         getMinHeight: () => MIN_EDITOR_HEIGHT,
         getHeight: () => instance.container.clientHeight || MIN_EDITOR_HEIGHT,
         hideOnZoom: false,
@@ -1441,8 +1140,8 @@ function createWidget(node) {
     });
     widgetObject.computeSize = (width) => {
         const meta = instance.metadata;
-        const previewHeight = meta ? Math.max(180, (width - 24) * (meta.height / meta.width)) : 260;
-        return [width, Math.max(MIN_EDITOR_HEIGHT, Math.min(760, previewHeight + 88))];
+        const previewHeight = meta ? Math.max(180, (width - 12) * (meta.height / meta.width)) : 260;
+        return [width, Math.max(MIN_EDITOR_HEIGHT, Math.min(760, previewHeight + 44))];
     };
     widgetObject.serialize = false;
     instance.widget = widgetObject;
@@ -1454,56 +1153,26 @@ function createWidget(node) {
     return widgetObject;
 }
 
-function showElement(element) {
-    if (!element?.style) return;
-    element.style.removeProperty("display");
-    element.style.removeProperty("height");
-    element.style.removeProperty("min-height");
-    element.style.removeProperty("max-height");
-    element.style.removeProperty("overflow");
-    element.removeAttribute?.("aria-hidden");
-}
-
-function showStateWidget(node) {
+function hideStateWidget(node) {
     const state = widget(node, "state");
-    const stateInput = node.inputs?.find((input) => input.name === "state");
-    if (stateInput) {
-        stateInput.label = "编辑状态";
-        stateInput.localized_name = "编辑状态";
-        stateInput.hidden = false;
-    }
     if (!state) return;
-    state._bpVideoHidden = false;
-    state.label = "编辑状态";
-    state.localized_name = "编辑状态";
-    state.display_name = "编辑状态";
-    state.options = { ...(state.options || {}), hidden: false, label: "编辑状态", display_name: "编辑状态" };
-    state.hidden = false;
-    state.visible = true;
-    delete state.computeSize;
-    delete state.getHeight;
-    delete state.computeLayoutSize;
-    delete state.computedHeight;
-    delete state.draw;
-    const element = state.element || state.inputEl || state.domElement;
-    const candidates = new Set([
-        element,
-        state.element,
-        state.inputEl,
-        state.domElement,
-        element?.previousElementSibling,
-        element?.nextElementSibling,
-        element?.parentElement,
-        element?.closest?.("[data-widget-name='state']"),
-        element?.closest?.("[data-name='state']"),
-    ]);
-    for (const candidate of candidates) showElement(candidate);
+    state._bpImageHidden = true;
+    state.options = { ...(state.options || {}), hidden: true };
+    state.hidden = true;
+    state.visible = false;
+    state.computeSize = () => [0, 0];
+    state.getHeight = () => 0;
+    state.computeLayoutSize = () => ({ minHeight: 0, minWidth: 0, maxHeight: 0, maxWidth: 0 });
+    state.computedHeight = 0;
+    state.draw = () => {};
+    hideElement(state.element || state.inputEl || state.domElement);
+    hideElement(state.element?.parentElement || state.inputEl?.parentElement || state.domElement?.parentElement);
 }
 
 function installInputWatchers(node) {
-    if (node._bpVideoInputWatchersInstalled) return;
-    node._bpVideoInputWatchersInstalled = true;
-    replaceWidgetCallback(widget(node, "file"), () => loadVideo(node, instances.get(node), false));
+    if (node._bpImageInputWatchersInstalled) return;
+    node._bpImageInputWatchersInstalled = true;
+    replaceWidgetCallback(widget(node, "file"), () => loadImage(node, instances.get(node), false));
     installWidgetCallback(widget(node, "width"), (value) => {
         applyManualDimensionInput(node, instances.get(node), "width", value);
     });
@@ -1513,23 +1182,11 @@ function installInputWatchers(node) {
     installWidgetCallback(widget(node, "divisor"), (value) => {
         applyDivisorSettings(node, instances.get(node), value);
     });
-    installWidgetCallback(widget(node, "fps"), (value) => {
-        const instance = instances.get(node);
-        if (instance?.outputSettingsLocked) return;
-        setWidgetValue(node, "fps", Math.round(clamp(widgetInputNumber(node, "fps", value, FPS_MIN), FPS_MIN, FPS_MAX) * 1000) / 1000);
-        if (instance?.metadata) {
-            updateOutputInfo(instance);
-            writeState(node, instance);
-        }
-    });
-    installWidgetCallback(widget(node, "preview_frames"), (value) => {
-        setWidgetValue(node, "preview_frames", Math.round(clamp(widgetInputNumber(node, "preview_frames", value, DEFAULT_PREVIEW_FRAMES), IMAGE_FRAMES_MIN, IMAGE_FRAMES_MAX)));
-    });
 }
 
 function installNodeHooks(node) {
-    if (node._bpVideoHooksInstalled) return;
-    node._bpVideoHooksInstalled = true;
+    if (node._bpImageHooksInstalled) return;
+    node._bpImageHooksInstalled = true;
     chainCallback(node, "onResize", function () {
         requestAnimationFrame(() => updateWidgetHeight(this));
     });
@@ -1541,24 +1198,24 @@ function installNodeHooks(node) {
         return result;
     };
     chainCallback(node, "onDrawForeground", function () {
-        showStateWidget(this);
+        hideStateWidget(this);
         suppressAutoPreview(this);
         updateWidgetHeight(this);
         const instance = instances.get(this);
         const currentFile = widget(this, "file")?.value || storedStateFile(this);
         if (instance && currentFile && instance.metadata?.file !== currentFile && instance.requestedFile !== currentFile) {
-            scheduleVideoLoad(this, instance, false);
+            scheduleImageLoad(this, instance, false);
         }
         updateOutputInfo(instance);
     });
-    wrapExecutedHandler(node, "_bpVideoInstanceExecutedWrapped");
+    wrapExecutedHandler(node, "_bpImageInstanceExecutedWrapped");
 }
 
 function initializeNode(node) {
-    if (node._bpVisualVideoEditorInitialized) return;
-    node._bpVisualVideoEditorInitialized = true;
-    preventSystemVideoPreview(node);
-    applyVisualVideoEditorLabels(node);
+    if (node._bpVisualImageEditorInitialized) return;
+    node._bpVisualImageEditorInitialized = true;
+    preventSystemImagePreview(node);
+    applyVisualImageEditorLabels(node);
     applyWidgetConstraints(node);
 
     if (!node.size || node.size[0] < DEFAULT_SIZE[0] || node.size[1] < DEFAULT_SIZE[1]) {
@@ -1568,14 +1225,14 @@ function initializeNode(node) {
         ]);
     }
 
-    showStateWidget(node);
+    hideStateWidget(node);
     createWidget(node);
     installInputWatchers(node);
     installNodeHooks(node);
 }
 
 app.registerExtension({
-    name: "ComfyUI_BrotherPao.VisualVideoEditor",
+    name: "ComfyUI_BrotherPao.VisualImageEditor",
 
     nodeCreated(node) {
         if (node.constructor?.comfyClass !== NODE_CLASS && node.comfyClass !== NODE_CLASS) return;
@@ -1586,7 +1243,7 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== NODE_CLASS) return;
         installExecutedEventFilter();
-        wrapExecutedHandler(nodeType.prototype, "_bpVideoPrototypeExecutedWrapped");
+        wrapExecutedHandler(nodeType.prototype, "_bpImagePrototypeExecutedWrapped");
         chainCallback(nodeType.prototype, "onNodeCreated", function () {
             initializeNode(this);
         });
@@ -1594,13 +1251,13 @@ app.registerExtension({
 });
 
 (function injectCSS() {
-    if (document.getElementById("bp-visual-video-editor-style")) return;
+    if (document.getElementById("bp-visual-image-editor-style")) return;
     const style = document.createElement("style");
-    style.id = "bp-visual-video-editor-style";
+    style.id = "bp-visual-image-editor-style";
     style.textContent = `
-.bp-video-editor {
+.bp-image-editor {
     width: 100%;
-    min-height: 360px;
+    min-height: 320px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1609,25 +1266,23 @@ app.registerExtension({
     color: #d7dbe3;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-.bp-video-toolbar {
+.bp-image-toolbar {
     flex: 0 0 32px;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    gap: 8px;
     box-sizing: border-box;
     padding: 0 6px;
     background: #24272d;
     border-bottom: 1px solid #333842;
 }
-.bp-video-tools {
+.bp-image-tools {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
     gap: 4px;
 }
-.bp-video-btn {
+.bp-image-btn {
     width: 24px;
     height: 24px;
     display: inline-flex;
@@ -1640,32 +1295,22 @@ app.registerExtension({
     cursor: pointer;
     padding: 0;
 }
-.bp-video-btn:hover {
+.bp-image-btn:hover {
     background: #3a3f49;
     color: #fff;
 }
-.bp-video-btn.locked {
+.bp-image-btn.locked {
     background: #245a7a;
     color: #ffffff;
 }
-.bp-video-btn.locked:hover {
+.bp-image-btn.locked:hover {
     background: #2f6f96;
 }
-.bp-video-btn svg {
+.bp-image-btn svg {
     width: 16px;
     height: 16px;
-    fill: currentColor;
 }
-.bp-video-btn .pause {
-    display: none;
-}
-.bp-video-btn.playing .play {
-    display: none;
-}
-.bp-video-btn.playing .pause {
-    display: block;
-}
-.bp-video-meta {
+.bp-image-meta {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -1675,7 +1320,7 @@ app.registerExtension({
     white-space: nowrap;
     padding: 0 4px;
 }
-.bp-video-stage {
+.bp-image-stage {
     position: relative;
     flex: 1 1 auto;
     min-height: 180px;
@@ -1684,16 +1329,17 @@ app.registerExtension({
     background: #08090b;
     touch-action: none;
 }
-.bp-video-stage video {
+.bp-image-stage img {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     object-fit: fill;
     display: block;
+    user-select: none;
     z-index: 0;
 }
-.bp-video-crop-box {
+.bp-image-crop-box {
     position: absolute;
     box-sizing: border-box;
     border: 2px solid #26d2ff;
@@ -1702,13 +1348,13 @@ app.registerExtension({
     cursor: move;
     z-index: 2;
 }
-.bp-video-editor.locked .bp-video-crop-box {
+.bp-image-editor.locked .bp-image-crop-box {
     cursor: default;
 }
-.bp-video-crop-box[hidden] {
+.bp-image-crop-box[hidden] {
     display: none;
 }
-.bp-video-crop-handle {
+.bp-image-crop-handle {
     position: absolute;
     width: 10px;
     height: 10px;
@@ -1716,19 +1362,19 @@ app.registerExtension({
     border-radius: 50%;
     background: #f4f7fb;
 }
-.bp-video-editor.locked .bp-video-crop-handle {
+.bp-image-editor.locked .bp-image-crop-handle {
     cursor: default;
     opacity: 0.55;
 }
-.bp-video-crop-handle.n { top: -6px; left: calc(50% - 5px); cursor: ns-resize; }
-.bp-video-crop-handle.e { right: -6px; top: calc(50% - 5px); cursor: ew-resize; }
-.bp-video-crop-handle.s { bottom: -6px; left: calc(50% - 5px); cursor: ns-resize; }
-.bp-video-crop-handle.w { left: -6px; top: calc(50% - 5px); cursor: ew-resize; }
-.bp-video-crop-handle.nw { left: -6px; top: -6px; cursor: nwse-resize; }
-.bp-video-crop-handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
-.bp-video-crop-handle.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
-.bp-video-crop-handle.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
-.bp-video-status {
+.bp-image-crop-handle.n { top: -6px; left: calc(50% - 5px); cursor: ns-resize; }
+.bp-image-crop-handle.e { right: -6px; top: calc(50% - 5px); cursor: ew-resize; }
+.bp-image-crop-handle.s { bottom: -6px; left: calc(50% - 5px); cursor: ns-resize; }
+.bp-image-crop-handle.w { left: -6px; top: calc(50% - 5px); cursor: ew-resize; }
+.bp-image-crop-handle.nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.bp-image-crop-handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.bp-image-crop-handle.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.bp-image-crop-handle.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.bp-image-status {
     position: absolute;
     inset: 0;
     display: flex;
@@ -1742,72 +1388,15 @@ app.registerExtension({
     pointer-events: none;
     z-index: 5;
 }
-.bp-video-status[hidden] {
+.bp-image-status[hidden] {
     display: none;
 }
-.bp-video-widget-disabled {
+.bp-image-widget-disabled {
     opacity: 0.62;
 }
-.bp-video-timeline {
-    flex: 0 0 36px;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    padding: 8px;
-    background: #1b1e23;
-    border-top: 1px solid #333842;
-}
-.bp-video-time-info {
-    flex: 0 0 155px;
-    color: #b9c0cc;
-    font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
-    white-space: nowrap;
-}
-.bp-video-range-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-}
-.bp-video-range-track {
-    position: relative;
-    flex: 1 1 auto;
-    height: 18px;
-    min-width: 80px;
-    cursor: pointer;
-    touch-action: none;
-}
-.bp-video-range-track::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 8px;
-    height: 3px;
-    border-radius: 2px;
-    background: #4a505c;
-}
-.bp-video-range-fill {
-    position: absolute;
-    top: 8px;
-    height: 3px;
-    border-radius: 2px;
-    background: #26d2ff;
-}
-.bp-video-range-handle {
-    position: absolute;
-    top: 2px;
-    width: 8px;
-    height: 14px;
-    margin-left: -4px;
-    border-radius: 2px;
-    background: #f4f7fb;
-    box-shadow: 0 0 0 1px #111316;
-    cursor: ew-resize;
-}
-.bp-video-suppress-system-preview .lg-node-content,
-.bp-video-suppress-system-preview video.min-h-55,
-.bp-video-suppress-system-preview video.min-h-55 + div {
+.bp-image-suppress-system-preview .lg-node-content,
+.bp-image-suppress-system-preview img.min-h-55,
+.bp-image-suppress-system-preview img.min-h-55 + div {
     display: none !important;
 }
 `;

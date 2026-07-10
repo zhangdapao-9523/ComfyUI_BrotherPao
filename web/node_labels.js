@@ -21,6 +21,7 @@ const ZH_LABEL_MAP = {
     "assembled_image": "拼接图像",
     "info_preview": "信息预览",
     "any_input": "任意输入",
+    "output_type": "输出类型",
     "boolean": "布尔",
     "revert": "反转输出",
     "yolo_model": "YOLO模型",
@@ -68,6 +69,7 @@ const NODE_TYPES = [
     "BrotherPao_IsNoInput",
     "BrotherPao_YoloDetect",
     "BrotherPao_QwenMultiangleCamera",
+    "BrotherPao_ConvertAny",
 ];
 
 app.registerExtension({

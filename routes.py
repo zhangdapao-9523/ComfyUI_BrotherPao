@@ -68,3 +68,39 @@ async def get_video_metadata(request):
     except Exception as e:
         logger.error("[BrotherPao] get_video_metadata failed: %s", e, exc_info=True)
         return web.json_response({"error": "读取视频元数据失败"}, status=500)
+
+
+@PromptServer.instance.routes.get("/brotherpao/image_metadata")
+async def get_image_metadata(request):
+    try:
+        file = request.rel_url.query.get("file", "")
+        if not file:
+            return web.json_response({"error": "缺少图像文件参数"}, status=400)
+
+        import folder_paths
+        from PIL import Image, ImageOps
+
+        if not folder_paths.exists_annotated_filepath(file):
+            return web.json_response({"error": f"图像文件不存在: {file}"}, status=404)
+
+        image_path = folder_paths.get_annotated_filepath(file)
+        with Image.open(image_path) as raw:
+            try:
+                raw.seek(0)
+            except EOFError:
+                pass
+            image = ImageOps.exif_transpose(raw)
+            width, height = image.size
+            mode = image.mode
+            has_alpha = "A" in image.getbands() or "transparency" in image.info
+
+        return web.json_response({
+            "file": file,
+            "width": int(width),
+            "height": int(height),
+            "mode": mode,
+            "has_alpha": bool(has_alpha),
+        })
+    except Exception as e:
+        logger.error("[BrotherPao] get_image_metadata failed: %s", e, exc_info=True)
+        return web.json_response({"error": "读取图像元数据失败"}, status=500)
