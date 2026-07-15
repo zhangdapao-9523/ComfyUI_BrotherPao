@@ -4,6 +4,7 @@ from .BaiduTranslate import BaiduTransDevApi
 from .ConvertAny import ConvertAny
 from .DictionaryNodes import DictionaryGet, DictionaryNew, DictionaryUpdate
 from .FramesEditor import FramesEditor
+from .ImageBatchList import ImageBatchToImageList, ImageListToImageBatch
 from .ImageColorMatch import ImageColorMatch
 from .ImageCompare import ImageCompareNode
 from .ImageTileNodes import ImageAssemble, ImageResolutionDivider, ImageTileBatch
@@ -22,6 +23,8 @@ BROTHERPAO_NODE_CLASSES: list[type[io.ComfyNode]] = [
     DictionaryGet,
     DictionaryNew,
     FramesEditor,
+    ImageBatchToImageList,
+    ImageListToImageBatch,
     ImageCompareNode,
     ImageTileBatch,
     ImageResolutionDivider,

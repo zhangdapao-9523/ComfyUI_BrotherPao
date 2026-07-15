@@ -7,6 +7,8 @@ const ZH_LABEL_MAP = {
     "target_image": "目标图像",
     "method": "匹配方法",
     "images": "图像",
+    "image_batch": "图像批次",
+    "image_list": "图像列表",
     "text": "文本",
     "translate_to": "翻译为",
     "horizontal_tiles": "水平分块数",
@@ -66,6 +68,8 @@ const NODE_TYPES = [
     "BrotherPao_ImageTileBatch",
     "BrotherPao_ImageResolutionDivider",
     "BrotherPao_ImageAssemble",
+    "BrotherPao_ImageBatchToImageList",
+    "BrotherPao_ImageListToImageBatch",
     "BrotherPao_IsNoInput",
     "BrotherPao_YoloDetect",
     "BrotherPao_QwenMultiangleCamera",
@@ -75,7 +79,8 @@ const NODE_TYPES = [
 app.registerExtension({
     name: "ComfyUI_BrotherPao.NodeLabelTranslation",
     nodeCreated(node) {
-        if (NODE_TYPES.indexOf(node.comfyClass) === -1) {
+        const nodeType = node.comfyClass || node.constructor?.comfyClass;
+        if (NODE_TYPES.indexOf(nodeType) === -1) {
             return;
         }
 
